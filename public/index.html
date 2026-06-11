@@ -47,19 +47,25 @@
 
   /* event card */
   .ecard{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden;
-    margin-bottom:12px; cursor:pointer; transition:.12s; width:100%; text-align:left; font-family:inherit; padding:0; display:block}
+    margin-bottom:0; cursor:pointer; transition:.12s; width:100%; text-align:left; font-family:inherit; padding:0; display:block}
   .ecard.sel{border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft)}
   .ecard.full{opacity:.5}
-  .ecard .img{height:120px; background:linear-gradient(135deg,#0a6b3d,#03532F); position:relative;
+  .ecard .img{height:110px; background:linear-gradient(135deg,#02B140,#164734); position:relative;
     display:flex; align-items:center; justify-content:center}
   .ecard .img img{width:100%; height:100%; object-fit:cover}
-  .ecard .img .ph{color:rgba(255,255,255,.35)}
-  .ecard .body{padding:13px 14px}
-  .ecard .ttl{font-size:16px; font-weight:800; color:var(--ink); line-height:1.25}
-  .ecard .meta-date{font-size:15px; margin-top:6px}
+  .ecard .img .ph{color:rgba(255,255,255,.4)}
+  .ecard .body{padding:11px 12px}
+  .ecard .ttl{font-size:14px; font-weight:800; color:var(--ink); line-height:1.25}
+  .ecard .meta-date{font-size:13px; margin-top:5px}
   .ecard .meta-date b{font-weight:800; color:var(--ink)}
   .ecard .meta-date span{color:var(--sub)}
-  .ecard .meta-place{font-size:13px; color:var(--sub); margin-top:3px}
+  .ecard .meta-place{font-size:12px; color:var(--sub); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .ecard .foot{margin-top:8px}
+  .egrid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .search-wrap{margin:4px 0 10px}
+  .search{width:100%; padding:12px 14px; border:1.5px solid var(--line); border-radius:12px;
+    font-size:15px; font-family:inherit; outline:none; background:var(--card)}
+  .search:focus{border-color:var(--green)}
 
   /* event page */
   .back-btn{background:none; border:none; color:var(--sub); font-size:15px; font-weight:600;
@@ -226,7 +232,7 @@ function eventImg(e){
 // me: профиль текущего волонтёра {phone,name,birthday} или null
 // vauth: 'login' | 'register' — экран авторизации волонтёра
 let me = null;
-let vol = { eventId:'', view:'list', day:'all', vtab:'events', mySignups:[], vauth:'login' };
+let vol = { eventId:'', view:'list', day:'all', vtab:'events', mySignups:[], vauth:'login', q:'' };
 
 function renderVolunteer(){
   if(!me){ renderLogin(); return; }
@@ -322,7 +328,9 @@ function renderList(){
           <div class="dn">${+day}</div><div class="wd">${wd}</div></div>`;
       }).join('') + `</div>`;
   }
-  const shown = state.events.filter(e=> vol.day==='all' || e.date===vol.day);
+  const q = (vol.q||'').trim().toLowerCase();
+  let shown = state.events.filter(e=> vol.day==='all' || e.date===vol.day);
+  if(q) shown = shown.filter(e=> (e.title||'').toLowerCase().includes(q) || (e.place||'').toLowerCase().includes(q));
   const signedIds = new Set(vol.mySignups.map(s=>s.event_id));
   const evCards = shown.map(e=>{
     const taken=+e.taken||0, full=taken>=e.need, mine=signedIds.has(e.id);
@@ -333,16 +341,27 @@ function renderList(){
         ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
         ${e.place?`<div class="meta-place">${esc(e.place)}</div>`:''}
         <div class="foot">
-          ${mine?'<span class="pill green">✓ Вы записаны</span>':(full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Нужно волонтёров: ${taken}/${e.need}</span>`)}
+          ${mine?'<span class="pill green">✓ Вы записаны</span>':(full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">${taken}/${e.need}</span>`)}
         </div>
       </div>
     </button>`;
   }).join('');
 
   el.innerHTML = `<div class="hello">Привет, ${esc(me.name.split(' ')[0])}!</div>` + calHtml +
-    `<div class="section-label">Выбери событие:</div>
-    ${shown.length?evCards:'<div class="card center muted">На этот день событий нет.</div>'}` + volNav();
+    `<div class="search-wrap"><input id="ev-search" class="search" placeholder="Поиск события…" value="${esc(vol.q)}"></div>
+    <div class="section-label">Выбери событие:</div>
+    <div class="egrid">${shown.length?evCards:'<div class="card center muted" style="grid-column:1/-1">Ничего не найдено.</div>'}</div>` + volNav();
 
+  const si=document.getElementById('ev-search');
+  if(si) si.oninput=e=>{ vol.q=e.target.value; const grid=document.querySelector('.egrid'); 
+    const qq=(vol.q||'').trim().toLowerCase();
+    let f=state.events.filter(x=> vol.day==='all'||x.date===vol.day);
+    if(qq) f=f.filter(x=>(x.title||'').toLowerCase().includes(qq)||(x.place||'').toLowerCase().includes(qq));
+    grid.innerHTML = f.length? f.map(ev=>{const taken=+ev.taken||0,full=taken>=ev.need,mine=signedIds.has(ev.id);
+      return `<button class="ecard" data-id="${esc(ev.id)}"><div class="img">${eventImg(ev)}</div><div class="body"><div class="ttl">${esc(ev.title)}</div>${ev.date?`<div class="meta-date"><b>${fmtDateFull(ev.date)}</b><span>, ${weekday(ev.date)}</span></div>`:''}${ev.place?`<div class="meta-place">${esc(ev.place)}</div>`:''}<div class="foot">${mine?'<span class="pill green">✓ Вы записаны</span>':(full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">${taken}/${ev.need}</span>`)}</div></div></button>`;
+    }).join('') : '<div class="card center muted" style="grid-column:1/-1">Ничего не найдено.</div>';
+    grid.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
+  };
   document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
   document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
   bindVolNav();
@@ -443,7 +462,7 @@ function renderProfile(){
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
 
 // ---------- COORDINATOR ----------
-let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null };
+let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null, q:'', limit:20 };
 function renderCoordinator(){
   if(!coordAuth){ renderCoordLogin(); return; }
   el.innerHTML = `<div class="loading">Загрузка…</div>`;
@@ -456,8 +475,8 @@ function renderCoordLogin(errMsg){
   el.innerHTML = `<button class="back-btn" id="to-role">‹ Выбор роли</button>
   <div class="card" style="max-width:360px;margin:0 auto">
     <h2 style="margin:0 0 4px;font-size:18px">Вход координатора</h2>
-    <p class="muted" style="margin:0 0 16px">Логин и пароль. Первый вход — логин <b>master</b> и мастер-PIN.</p>
-    <label><span>Логин</span><input id="cl-login" placeholder="master или ваш логин"></label>
+    <p class="muted" style="margin:0 0 16px">Введите логин и пароль.</p>
+    <label><span>Логин</span><input id="cl-login" placeholder="логин"></label>
     <label><span>Пароль</span><input id="cl-pass" type="password" placeholder="пароль"></label>
     ${errMsg?`<div class="err">${esc(errMsg)}</div>`:''}
     <button class="btn" id="cl-go">Войти</button>
@@ -495,8 +514,12 @@ function drawCoordinator(){
   </div>`;
 
   if(coord.tab==='people'){
-    const visible = s.filter(x=> coord.filter==='all'? x.status!=='rejected' : x.status===coord.filter);
-    const cards = visible.map(x=>{
+    const q=(coord.q||'').trim().toLowerCase();
+    let visible = s.filter(x=> coord.filter==='all'? x.status!=='rejected' : x.status===coord.filter);
+    if(q) visible = visible.filter(x=> (x.name||'').toLowerCase().includes(q) || (x.phone||'').toLowerCase().includes(q));
+    const total = visible.length;
+    const page = visible.slice(0, coord.limit);
+    const cards = page.map(x=>{
       const pending = x.status==='pending';
       if(coord.editingVol===x.id){
         return `<div class="card">
@@ -526,12 +549,18 @@ function drawCoordinator(){
             <button class="btn small danger" data-act="del" data-id="${x.id}">Удалить</button></div>`}
       </div>`;
     }).join('');
-    el.innerHTML = stats + subtabs + `<div class="filters">
+    const moreBtn = total>coord.limit ? `<button class="btn ghost" id="more-people">Показать ещё (${total-coord.limit})</button>` : '';
+    el.innerHTML = stats + subtabs +
+      `<div class="search-wrap"><input id="p-search" class="search" placeholder="Поиск по имени или телефону…" value="${esc(coord.q)}"></div>
+      <div class="filters">
       <button class="chip ${coord.filter==='all'?'active':''}" data-f="all">Все</button>
       <button class="chip ${coord.filter==='pending'?'active':''}" data-f="pending">Ждут</button>
       <button class="chip ${coord.filter==='approved'?'active':''}" data-f="approved">Подтверждены</button>
-    </div>` + (visible.length?cards:'<div class="card center muted">Здесь пусто. Заявки появятся, когда волонтёры запишутся.</div>');
-    document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ coord.filter=c.dataset.f; drawCoordinator(); });
+    </div>` + (total?cards:'<div class="card center muted">Никого не найдено.</div>') + moreBtn;
+    const ps=document.getElementById('p-search');
+    if(ps) ps.oninput=e=>{ coord.q=e.target.value; coord.limit=20; drawCoordinator(); setTimeout(()=>{const n=document.getElementById('p-search'); if(n){n.focus(); n.setSelectionRange(n.value.length,n.value.length);}},0); };
+    const mb=document.getElementById('more-people'); if(mb) mb.onclick=()=>{ coord.limit+=20; drawCoordinator(); };
+    document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ coord.filter=c.dataset.f; coord.limit=20; drawCoordinator(); });
     document.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{
       const id=b.dataset.id, act=b.dataset.act;
       if(act==='approve') await api.patch({id,status:'approved'});
