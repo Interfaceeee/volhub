@@ -5,6 +5,14 @@
 //   PATCH {phone, name?, birthday?, newPassword?}              — координатор правит/сбрасывает пароль
 import { sql, ensureSchema, checkCoordinator, readBody, hashPassword, verifyPassword } from './_db.js';
 
+// привести телефон к единому виду: только цифры и ведущий +
+function normPhone(p) {
+  let s = String(p || '').trim();
+  const plus = s.startsWith('+');
+  s = s.replace(/[^0-9]/g, '');
+  return (plus ? '+' : '') + s;
+}
+
 // собрать профиль + записи волонтёра (сканер только по подтверждённым)
 async function profileWithSignups(phone) {
   const prof = await sql`SELECT phone, name, birthday FROM volunteers WHERE phone = ${phone}`;
@@ -26,7 +34,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const b = await readBody(req);
     const action = b.action || 'register';
-    const phone = (b.phone || '').trim();
+    const phone = normPhone(b.phone);
 
     if (action === 'register') {
       const name = (b.name || '').trim();
@@ -68,7 +76,7 @@ export default async function handler(req, res) {
     const auth = await checkCoordinator(req);
     if (!auth.ok) return res.status(401).json({ error: 'Только для координатора' });
     const b = await readBody(req);
-    const phone = (b.phone || '').trim();
+    const phone = normPhone(b.phone);
     if (!phone) return res.status(400).json({ error: 'Нужен телефон' });
     if (b.name !== undefined || b.birthday !== undefined) {
       await sql`
