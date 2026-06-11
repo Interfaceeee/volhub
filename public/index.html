@@ -4,70 +4,112 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>Волонтёры Ticketon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --ink:#16130F; --paper:#FBF7F0; --card:#fff; --line:#E4DCCE;
-    --sub:#7A7064; --orange:#FF5C16; --orangeSoft:#FFE9DD; --red:#C2410C;
-    --green:#1F8A4C; --greenSoft:#DDF1E3; --amber:#B7791F; --amberSoft:#FBEFD2;
+    --green:#02B140; --green-dark:#164734; --green-soft:#E4F6E9;
+    --ink:#0E151C; --sub:#71757A; --line:#ECECEC; --bg:#F5F6F7; --card:#fff;
+    --amber:#B7791F; --amber-soft:#FBEFD2; --red:#D03A2C;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
-  body{margin:0; background:var(--paper); color:var(--ink);
-    font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
-  .wrap{max-width:440px; margin:0 auto; min-height:100vh}
-  header{padding:20px 18px 14px; border-bottom:1px solid var(--line)}
-  h1{margin:0; font-size:21px; font-weight:800; letter-spacing:-.5px;
-    display:flex; align-items:center; gap:8px}
-  .dot{width:11px;height:11px;border-radius:3px;background:var(--orange);display:inline-block}
-  header p{margin:4px 0 0 19px; font-size:13px; color:var(--sub)}
-  .tabs{display:flex; gap:8px; padding:14px; position:sticky; top:0; background:var(--paper); z-index:5}
-  .tab{flex:1; padding:11px 0; border-radius:12px; font-size:15px; font-weight:700;
-    border:1.5px solid var(--line); background:var(--card); color:var(--sub);
-    cursor:pointer; font-family:inherit}
-  .tab.active{border-color:var(--ink); background:var(--ink); color:#fff}
-  main{padding:0 14px 40px}
-  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:10px}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'Inter',system-ui,sans-serif}
+  .wrap{max-width:460px; margin:0 auto; min-height:100vh; background:var(--bg)}
+
+  /* header */
+  header{background:var(--card); padding:14px 16px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:10}
+  .logo-full{height:30px; width:auto; flex:0 0 auto}
+  .header-sub{margin-left:auto; font-size:13px; font-weight:600; color:var(--sub)}
+
+  /* tabs */
+  .tabs{display:flex; gap:8px; padding:12px 16px 4px; background:var(--bg); position:sticky; top:63px; z-index:9}
+  .tab{flex:1; padding:11px 0; border-radius:12px; font-size:14px; font-weight:700;
+    border:none; background:#E7E9EB; color:var(--sub); cursor:pointer; font-family:inherit}
+  .tab.active{background:var(--green); color:#fff; box-shadow:0 2px 8px rgba(79,175,59,.35)}
+
+  main{padding:12px 16px 48px}
+
+  /* calendar strip */
+  .cal{display:flex; gap:7px; overflow-x:auto; padding:6px 2px 12px; scrollbar-width:none}
+  .cal::-webkit-scrollbar{display:none}
+  .cal-day{flex:0 0 auto; width:48px; padding:9px 0; border-radius:13px; text-align:center;
+    background:var(--card); border:1.5px solid var(--line); cursor:pointer; transition:.12s}
+  .cal-day .dn{font-size:17px; font-weight:800; color:var(--ink)}
+  .cal-day .wd{font-size:10px; font-weight:600; color:var(--sub); margin-top:2px; text-transform:uppercase}
+  .cal-day.has{border-color:#CDEAC4}
+  .cal-day.has .dn{color:var(--green-dark)}
+  .cal-day.active{background:var(--green); border-color:var(--green)}
+  .cal-day.active .dn,.cal-day.active .wd{color:#fff}
+  .cal-day.alldays{width:auto; padding:9px 14px; display:flex; align-items:center}
+  .cal-day.alldays .dn{font-size:13px; font-weight:700}
+
+  /* event card */
+  .ecard{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden;
+    margin-bottom:12px; cursor:pointer; transition:.12s; width:100%; text-align:left; font-family:inherit; padding:0; display:block}
+  .ecard.sel{border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft)}
+  .ecard.full{opacity:.5}
+  .ecard .img{height:120px; background:linear-gradient(135deg,#0a6b3d,#03532F); position:relative;
+    display:flex; align-items:center; justify-content:center}
+  .ecard .img img{width:100%; height:100%; object-fit:cover}
+  .ecard .img .ph{color:rgba(255,255,255,.35)}
+  .ecard .body{padding:13px 14px}
+  .ecard .ttl{font-size:16px; font-weight:800; color:var(--ink); line-height:1.25}
+  .ecard .meta{font-size:13px; color:var(--sub); margin-top:5px; display:flex; align-items:center; gap:5px}
+  .ecard .foot{display:flex; align-items:center; justify-content:space-between; margin-top:10px}
+
+  /* generic card / forms */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:12px}
   label{display:block; margin-bottom:14px}
   label span{display:block; font-size:13px; font-weight:700; color:var(--sub); margin-bottom:6px}
   input{width:100%; padding:13px 14px; border:1.5px solid var(--line); border-radius:12px;
     font-size:16px; background:var(--card); color:var(--ink); font-family:inherit; outline:none}
-  input:focus{border-color:var(--orange)}
-  .btn{width:100%; padding:13px 18px; border-radius:12px; font-size:16px; font-weight:700;
-    border:1.5px solid var(--orange); background:var(--orange); color:#fff; cursor:pointer; font-family:inherit}
-  .btn:disabled{background:#EDE6DA; border-color:#EDE6DA; color:#B4AC9E; cursor:default}
-  .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line)}
-  .btn.small{width:auto; padding:8px 14px; font-size:14px}
-  .btn.danger{background:transparent; color:var(--red); border-color:#F0CDBC}
-  .pill{font-size:12px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap}
-  .pill.amber{background:var(--amberSoft); color:var(--amber)}
-  .pill.green{background:var(--greenSoft); color:var(--green)}
-  .ev{text-align:left; padding:14px; border-radius:14px; cursor:pointer; width:100%;
-    border:2px solid var(--line); background:var(--card); font-family:inherit; margin-bottom:10px; display:block}
-  .ev.sel{border-color:var(--orange); background:var(--orangeSoft)}
-  .ev .t{font-weight:800; font-size:16px}
-  .ev .d{font-size:13px; color:var(--sub); margin-top:4px}
+  input:focus{border-color:var(--green)}
+  .btn{width:100%; padding:14px 18px; border-radius:12px; font-size:16px; font-weight:700;
+    border:none; background:var(--green); color:#fff; cursor:pointer; font-family:inherit;
+    box-shadow:0 2px 8px rgba(79,175,59,.3)}
+  .btn:disabled{background:#DEE1E3; color:#A6ABB0; cursor:default; box-shadow:none}
+  .btn.ghost{background:transparent; color:var(--ink); border:1.5px solid var(--line); box-shadow:none}
+  .btn.small{width:auto; padding:9px 15px; font-size:14px}
+  .btn.danger{background:transparent; color:var(--red); border:1.5px solid #F3CEC9; box-shadow:none}
+  .pill{font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; white-space:nowrap}
+  .pill.amber{background:var(--amber-soft); color:var(--amber)}
+  .pill.green{background:var(--green-soft); color:var(--green-dark)}
   .row{display:flex; gap:8px; margin-top:12px}
-  .toggle{flex:1; padding:10px 0; border-radius:12px; font-size:14px; font-weight:700; cursor:pointer;
+  .toggle{flex:1; padding:11px 0; border-radius:12px; font-size:14px; font-weight:700; cursor:pointer;
     border:1.5px solid var(--line); background:var(--card); color:var(--sub); font-family:inherit}
-  .toggle.on{border-color:var(--green); background:var(--greenSoft); color:var(--green)}
-  .stats{display:flex; gap:8px; margin:6px 0 14px}
-  .stat{flex:1; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 8px; text-align:center}
-  .stat b{font-size:22px; font-weight:800; display:block}
+  .toggle.on{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
+  .stats{display:flex; gap:8px; margin:4px 0 14px}
+  .stat{flex:1; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 6px; text-align:center}
+  .stat b{font-size:22px; font-weight:800; display:block; color:var(--green-dark)}
   .stat span{font-size:11px; color:var(--sub); font-weight:600}
   .muted{color:var(--sub); font-size:14px}
   .center{text-align:center}
   .filters{display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap}
-  .chip{font-size:13px; font-weight:700; padding:6px 12px; border-radius:999px; cursor:pointer;
+  .chip{font-size:13px; font-weight:700; padding:7px 13px; border-radius:999px; cursor:pointer;
     border:1.5px solid var(--line); background:var(--card); color:var(--sub); font-family:inherit}
-  .chip.active{border-color:var(--ink); background:var(--ink); color:#fff}
+  .chip.active{border-color:var(--green); background:var(--green); color:#fff}
   .err{color:var(--red); font-size:13px; margin:8px 0}
   .loading{text-align:center; color:var(--sub); padding:40px}
+  .section-label{font-size:13px; font-weight:700; color:var(--sub); margin:4px 2px 10px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1><span class="dot"></span> Волонтёры Ticketon</h1>
-    <p>Запись на события и учёт инвентаря</p>
+    <svg class="logo-full" viewBox="0 0 4819 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M938.949 0V261.202C938.949 941.231 470.286 1079.78 470.286 1079.78L469.481 1080L468.683 1079.78C468.683 1079.78 425.406 1066.99 365.168 1030.11C227.135 945.589 0 734.613 0 261.202V0H938.949Z" fill="#164734"/>
+<path d="M938.952 103.455C938.952 190.356 868.5 260.805 781.599 260.807H365.056V469.183H730.17V572.638C730.17 656.104 665.124 724.434 582.933 729.659H365.038V1030.02C226.992 945.45 0.000832656 734.462 0 261.204V0H938.952V103.455Z" fill="#02B140"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M3855.17 250.566C3941 250.566 4009.65 277.32 4064.98 332.741C4120.28 388.163 4147 455.016 4147 537.191C4147 619.366 4120.31 690.05 4064.98 745.472C4009.68 800.893 3941 829.561 3855.17 829.561C3769.35 829.561 3700.7 800.893 3645.37 745.472C3590.06 690.05 3563.34 621.281 3563.34 537.191C3563.34 455.016 3590.03 388.163 3645.37 332.741C3700.67 279.235 3769.35 250.566 3855.17 250.566ZM3855.17 376.702C3811.3 376.702 3775.06 391.994 3746.45 422.548C3717.85 453.101 3704.5 491.346 3704.5 537.191C3704.5 584.952 3717.85 625.082 3746.45 657.581C3775.06 690.05 3811.3 705.342 3855.17 705.342C3899.04 705.342 3935.28 690.05 3963.89 657.581C3992.5 625.082 4005.85 586.867 4005.85 537.191C4005.85 491.346 3992.5 453.131 3963.89 422.548C3935.28 391.964 3899.04 376.702 3855.17 376.702Z" fill="#0E151C"/>
+<path d="M1541.1 380.494H1335.12V497.054H1504.86V615.528H1333.21V821.893H1199.71V262.02H1541.1V380.494Z" fill="#0E151C"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M1813.84 262.02C1863.43 262.02 1899.67 265.85 1922.56 275.396C1954.97 288.773 1979.78 307.866 1998.84 336.534C2017.9 365.203 2025.53 397.672 2025.53 437.802C2025.53 468.385 2017.9 498.939 2004.56 527.607C1989.29 556.276 1970.23 577.283 1943.54 590.66V592.575C1949.25 600.206 1954.97 609.783 1964.52 626.96L2073.23 821.863H1920.65L1821.47 632.705H1756.62V821.863H1619.3V262.02H1813.84ZM1754.71 514.23H1813.84C1836.74 514.23 1853.88 508.485 1865.34 497.023C1878.69 485.562 1884.41 468.355 1884.41 445.432C1884.41 414.849 1872.97 395.756 1852 386.21C1840.57 380.464 1823.39 378.579 1800.5 378.579H1754.71V514.23Z" fill="#0E151C"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M3225.21 262.02C3312.95 262.02 3383.51 286.858 3435.02 336.534C3486.52 386.21 3513.21 453.094 3513.21 540.984C3513.21 628.875 3486.52 697.673 3435.02 747.349C3383.51 797.025 3312.95 821.863 3225.21 821.863H3026.86V262.02H3225.21ZM3166.05 703.389H3164.13L3164.16 703.419H3219.46C3267.14 703.419 3305.29 690.042 3331.98 661.374C3358.68 632.705 3372.02 592.575 3372.02 540.984C3372.02 489.393 3358.68 449.263 3331.98 420.595C3305.29 393.841 3267.13 378.549 3221.35 378.549H3166.05V703.389Z" fill="#0E151C"/>
+<path d="M2481.39 378.579H2269.69V479.847H2439.43V598.321H2269.69V703.419H2492.85V819.977H2132.37V262.02H2481.39V378.579Z" fill="#0E151C"/>
+<path d="M2929.58 378.579H2715.97V479.847H2885.71V598.321H2715.97V703.419H2941.04V819.977H2580.56V262.02H2929.58V378.579Z" fill="#0E151C"/>
+<path d="M4511.49 587.841H4513.37L4624.01 261.087H4818.55V819.044H4681.22V431.023H4679.35L4570.59 729.208H4454.27L4345.51 431.023H4343.63V819.044H4206.31V261.087H4400.85L4511.49 587.841Z" fill="#0E151C"/>
+</svg>
+    <div class="header-sub">Волонтёры</div>
   </header>
   <div class="tabs">
     <button class="tab active" id="tab-vol">Я волонтёр</button>
@@ -93,7 +135,9 @@ const api = {
 
 const el = document.getElementById('app');
 const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); const mo=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек']; return `${+d} ${mo[+m-1]} ${y}`; }
+const MO=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const WD=['вс','пн','вт','ср','чт','пт','сб'];
+function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MO[+m-1]} ${y}`; }
 
 document.getElementById('tab-vol').onclick = ()=>{ state.mode='volunteer'; setTabs(); render(); };
 document.getElementById('tab-coord').onclick = ()=>{ state.mode='coordinator'; setTabs(); render(); };
@@ -101,43 +145,76 @@ function setTabs(){ document.getElementById('tab-vol').classList.toggle('active'
 
 async function loadEvents(){ state.events = await api.events(); }
 
+// событие -> картинка-заглушка или реальная (когда появится поле image)
+function eventImg(e){
+  if(e.image){ return `<img src="${esc(e.image)}" alt="">`; }
+  return `<svg class="ph" width="44" height="44" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M3 16l5-4 4 3 3-2 6 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
 // ---------- VOLUNTEER ----------
-let vol = { name:'', phone:'', eventId:'', done:false };
+let vol = { name:'', phone:'', eventId:'', done:false, day:'all' };
+
 function renderVolunteer(){
   if(vol.done){
     const ev = state.events.find(e=>e.id===vol.eventId);
     el.innerHTML = `<div class="card center">
-      <div style="font-size:40px;margin-bottom:8px">✓</div>
+      <div style="font-size:44px;margin-bottom:6px">🎉</div>
       <h2 style="margin:0 0 6px;font-size:19px">Заявка отправлена</h2>
       <p class="muted">${esc(vol.name)}, ты записан(а) на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
       <p class="muted">Координатор подтвердит участие и выдаст бейдж с манишкой на месте.</p>
-      <button class="btn ghost" id="again">Записать ещё одного</button>
+      <button class="btn ghost" id="again" style="margin-top:6px">Записать ещё одного</button>
     </div>`;
-    document.getElementById('again').onclick=()=>{ vol={name:'',phone:'',eventId:'',done:false}; render(); };
+    document.getElementById('again').onclick=()=>{ vol={name:'',phone:'',eventId:'',done:false,day:'all'}; render(); };
     return;
   }
-  const evCards = state.events.map(e=>{
-    const taken = +e.taken||0, full = taken>=e.need, sel = vol.eventId===e.id;
-    return `<button class="ev ${sel?'sel':''}" data-id="${esc(e.id)}" ${full&&!sel?'disabled style="opacity:.55"':''}>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        <span class="t">${esc(e.title)}</span>
-        ${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">${taken}/${e.need}</span>`}
+
+  // календарь: собираем уникальные даты событий
+  const dates = [...new Set(state.events.map(e=>e.date).filter(Boolean))].sort();
+  let calHtml = '';
+  if(dates.length){
+    calHtml = `<div class="cal">
+      <div class="cal-day alldays ${vol.day==='all'?'active':''}" data-day="all"><span class="dn">Все дни</span></div>` +
+      dates.map(d=>{
+        const [y,m,day]=d.split('-'); const wd=WD[new Date(d).getDay()];
+        return `<div class="cal-day has ${vol.day===d?'active':''}" data-day="${d}">
+          <div class="dn">${+day}</div><div class="wd">${wd}</div></div>`;
+      }).join('') + `</div>`;
+  }
+
+  const shown = state.events.filter(e=> vol.day==='all' || e.date===vol.day);
+  const evCards = shown.map(e=>{
+    const taken=+e.taken||0, full=taken>=e.need, sel=vol.eventId===e.id;
+    return `<button class="ecard ${sel?'sel':''} ${full&&!sel?'full':''}" data-id="${esc(e.id)}" ${full&&!sel?'disabled':''}>
+      <div class="img">${eventImg(e)}</div>
+      <div class="body">
+        <div class="ttl">${esc(e.title)}</div>
+        ${e.date?`<div class="meta">📅 ${fmtDate(e.date)}</div>`:''}
+        ${e.place?`<div class="meta">📍 ${esc(e.place)}</div>`:''}
+        <div class="foot">
+          ${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Нужно волонтёров: ${taken}/${e.need}</span>`}
+          ${sel?'<span class="pill green">✓ Выбрано</span>':''}
+        </div>
       </div>
-      ${e.date?`<div class="d">${fmtDate(e.date)}</div>`:''}
     </button>`;
   }).join('');
-  el.innerHTML = `<p class="muted" style="margin:6px 4px 12px">Выбери событие:</p>
-    ${state.events.length?evCards:'<div class="card center muted">Событий пока нет.</div>'}
+
+  el.innerHTML = calHtml +
+    `<div class="section-label">Выбери событие:</div>
+    ${shown.length?evCards:'<div class="card center muted">На этот день событий нет.</div>'}
     <div class="card">
       <label><span>Имя и фамилия</span><input id="v-name" placeholder="Айгуль Асанова" value="${esc(vol.name)}"></label>
       <label><span>Телефон</span><input id="v-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(vol.phone)}"></label>
       <button class="btn" id="v-submit">Записаться</button>
       <div class="err" id="v-err" style="display:none"></div>
     </div>`;
-  document.querySelectorAll('.ev').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; render(); });
-  document.getElementById('v-name').oninput=e=>vol.name=e.target.value;
-  document.getElementById('v-phone').oninput=e=>vol.phone=e.target.value;
-  document.getElementById('v-submit').onclick=async()=>{
+
+  document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
+  document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; render(); });
+  const n=document.getElementById('v-name'), p=document.getElementById('v-phone');
+  if(n) n.oninput=e=>vol.name=e.target.value;
+  if(p) p.oninput=e=>vol.phone=e.target.value;
+  const sub=document.getElementById('v-submit');
+  if(sub) sub.onclick=async()=>{
     if(!vol.name.trim()||!vol.phone.trim()||!vol.eventId){ showErr('v-err','Выбери событие и заполни имя с телефоном'); return; }
     const r = await api.signup({name:vol.name,phone:vol.phone,eventId:vol.eventId});
     if(r.ok){ vol.done=true; await loadEvents(); render(); }
@@ -150,16 +227,14 @@ function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textConte
 let coord = { tab:'people', filter:'all', err:'', editing:null };
 function renderCoordinator(){
   if(!state.pin){ renderPin(); return; }
-  // загрузим заявки, если ещё не загружены в этой отрисовке — делаем асинхронно
   el.innerHTML = `<div class="loading">Загрузка…</div>`;
   api.listSignups().then(list=>{
     if(list===null){ state.pin=null; sessionStorage.removeItem(PIN_KEY); renderPin('Неверный PIN'); return; }
-    state.signups = list;
-    drawCoordinator();
+    state.signups = list; drawCoordinator();
   });
 }
 function renderPin(errMsg){
-  el.innerHTML = `<div class="card" style="max-width:320px;margin:8px auto">
+  el.innerHTML = `<div class="card" style="max-width:340px;margin:8px auto">
     <h2 style="margin:0 0 4px;font-size:18px">Вход для координатора</h2>
     <p class="muted" style="margin:0 0 16px">Введите PIN-код.</p>
     <label><span>PIN</span><input id="pin" type="password" inputmode="numeric" placeholder="••••"></label>
@@ -185,7 +260,7 @@ function drawCoordinator(){
   const subtabs = `<div class="row" style="margin-top:0;margin-bottom:12px">
     <button class="tab ${coord.tab==='people'?'active':''}" id="ct-people">Волонтёры</button>
     <button class="tab ${coord.tab==='events'?'active':''}" id="ct-events">События</button>
-    <button class="tab" id="ct-out" style="flex:0 0 auto;padding:11px 14px">Выйти</button>
+    <button class="tab" id="ct-out" style="flex:0 0 auto;padding:11px 14px;background:#E7E9EB;color:var(--sub)">Выйти</button>
   </div>`;
 
   if(coord.tab==='people'){
@@ -194,7 +269,7 @@ function drawCoordinator(){
       const pending = x.status==='pending';
       return `<div class="card">
         <div style="display:flex;justify-content:space-between;gap:8px">
-          <div><div class="ev-name" style="font-weight:800;font-size:16px">${esc(x.name)}</div>
+          <div><div style="font-weight:800;font-size:16px">${esc(x.name)}</div>
             <div class="muted">${esc(x.phone)}</div>
             <div class="muted" style="margin-top:2px">${esc(evTitle(x.event_id))}</div></div>
           <span class="pill ${pending?'amber':'green'}">${pending?'Ждёт':'Подтверждён'}</span>
@@ -250,6 +325,7 @@ function drawCoordinator(){
       <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Новое событие</h3>
         <label><span>Название</span><input id="e-title" placeholder="Концерт, спектакль…"></label>
         <label><span>Дата</span><input id="e-date" type="date"></label>
+        <label><span>Место</span><input id="e-place" placeholder="Адрес или площадка"></label>
         <label><span>Сколько волонтёров нужно</span><input id="e-need" type="number" inputmode="numeric" value="4"></label>
         <button class="btn" id="e-add">Добавить событие</button>
       </div>`;
@@ -276,9 +352,10 @@ function drawCoordinator(){
     document.getElementById('e-add').onclick=async()=>{
       const title=document.getElementById('e-title').value.trim();
       const date=document.getElementById('e-date').value;
+      const place=document.getElementById('e-place').value.trim();
       const need=+document.getElementById('e-need').value||4;
       if(!title){ return; }
-      await api.addEvent({title,date:date||null,need}); await loadEvents(); drawCoordinator();
+      await api.addEvent({title,date:date||null,place:place||null,need}); await loadEvents(); drawCoordinator();
     };
   }
   document.getElementById('ct-people').onclick=()=>{ coord.tab='people'; drawCoordinator(); };
@@ -287,7 +364,6 @@ function drawCoordinator(){
 }
 
 function render(){ if(state.mode==='volunteer') renderVolunteer(); else renderCoordinator(); }
-
 (async function init(){ await loadEvents(); render(); })();
 </script>
 </body>
