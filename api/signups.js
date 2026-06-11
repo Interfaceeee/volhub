@@ -3,14 +3,24 @@
 //   POST   — волонтёр записывается (PIN НЕ нужен)
 //   PATCH  — координатор меняет статус / бейдж / манишку (нужен PIN)
 //   DELETE — удалить заявку по ?id= (нужен PIN)
-import { sql, ensureSchema, checkCoordinator, readBody, uid } from './_db.js';
+import { sql, ensureSchema, checkCoordinator, readBody, uid, verifyPassword } from './_db.js';
 
 export default async function handler(req, res) {
   await ensureSchema();
 
   if (req.method === 'POST') {
-    // запись волонтёра — открыта для всех
     const b = await readBody(req);
+    // отмена своей записи волонтёром: нужен телефон+пароль и eventId
+    if (b.action === 'cancel') {
+      const phone = (b.phone || '').trim();
+      const password = b.password || '';
+      if (!phone || !password || !b.eventId) return res.status(400).json({ error: 'Нужны телефон, пароль и событие' });
+      const v = await sql`SELECT pass_hash FROM volunteers WHERE phone = ${phone}`;
+      if (!v.length || !verifyPassword(password, v[0].pass_hash)) return res.status(401).json({ error: 'Неверный пароль' });
+      await sql`DELETE FROM signups WHERE phone = ${phone} AND event_id = ${b.eventId}`;
+      return res.status(200).json({ ok: true });
+    }
+    // запись волонтёра — открыта для всех
     if (!b.name || !b.phone || !b.eventId) {
       return res.status(400).json({ error: 'Заполни имя, телефон и событие' });
     }
