@@ -1,1 +1,6 @@
-{}
+{
+  "$comment": "Cron автосбора отключён: ticketon.kg блокирует серверные запросы (403). Включи расписание здесь, когда появится JSON-API афиши. Пример: \"crons\": [{ \"path\": \"/api/sync\", \"schedule\": \"0 6 * * *\" }]",
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}
