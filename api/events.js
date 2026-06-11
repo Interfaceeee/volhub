@@ -2,7 +2,7 @@
 //   GET    — список событий (для всех)
 //   POST   — добавить событие (нужен PIN координатора)
 //   DELETE — удалить событие по ?id= (нужен PIN)
-import { sql, ensureSchema, checkCoordinator, readBody, uid } from './_db.js';
+import { sql, ensureSchema, checkCoordinator, readBody, uid, eventId } from './_db.js';
 
 export default async function handler(req, res) {
   await ensureSchema();
@@ -32,7 +32,11 @@ export default async function handler(req, res) {
     if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Нужен вход координатора' });
     const b = await readBody(req);
     if (!b.title) return res.status(400).json({ error: 'Нужно название' });
-    const id = b.id || uid();
+    let id = b.id;
+    if (!id) {
+      // генерируем уникальный 8-значный код
+      do { id = eventId(); } while ((await sql`SELECT 1 FROM events WHERE id = ${id}`).length);
+    }
     await sql`
       INSERT INTO events (id, title, date, place, need, source, scan_login, scan_pass)
       VALUES (${id}, ${b.title}, ${b.date || null}, ${b.place || null},
