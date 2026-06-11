@@ -37,12 +37,22 @@ export async function ensureSchema() {
       vest        BOOLEAN DEFAULT false,
       created_at  TIMESTAMPTZ DEFAULT now()
     )`;
-  // профили волонтёров: телефон — логин (без подтверждения)
+  // профили волонтёров: телефон — логин, плюс пароль (хэш)
   await sql`
     CREATE TABLE IF NOT EXISTS volunteers (
       phone       TEXT PRIMARY KEY,
       name        TEXT NOT NULL,
       birthday    TEXT,
+      pass_hash   TEXT,
+      created_at  TIMESTAMPTZ DEFAULT now()
+    )`;
+  await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS pass_hash TEXT`;
+  // именованные учётки координаторов (логин + хэш пароля)
+  await sql`
+    CREATE TABLE IF NOT EXISTS coordinators (
+      login       TEXT PRIMARY KEY,
+      name        TEXT,
+      pass_hash   TEXT NOT NULL,
       created_at  TIMESTAMPTZ DEFAULT now()
     )`;
   // поля логина/пароля сканера билетов на событии (вводит координатор)
@@ -53,12 +63,40 @@ export async function ensureSchema() {
 
 export { sql };
 
-// Простой общий секрет для координаторских действий.
-// Меняется через переменную окружения COORD_PIN в Vercel.
+import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
+
+// Хэш пароля: scrypt с солью. Формат "соль:хэш" (hex).
+export function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(String(password), salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+export function verifyPassword(password, stored) {
+  if (!stored || !stored.includes(':')) return false;
+  const [salt, hash] = stored.split(':');
+  const test = scryptSync(String(password), salt, 64).toString('hex');
+  try { return timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex')); }
+  catch { return false; }
+}
+
+// Старый общий PIN — остаётся как "мастер-вход" для первого координатора.
 export function checkPin(req) {
   const pin = process.env.COORD_PIN || '1234';
   const given = req.headers['x-coord-pin'];
   return given && given === pin;
+}
+
+// Полная проверка прав координатора: либо мастер-PIN, либо валидная учётка.
+// Заголовки: x-coord-pin (мастер) ИЛИ x-coord-login + x-coord-pass.
+export async function checkCoordinator(req) {
+  if (checkPin(req)) return { ok: true, login: 'master' };
+  const login = req.headers['x-coord-login'];
+  const pass = req.headers['x-coord-pass'];
+  if (!login || !pass) return { ok: false };
+  const rows = await sql`SELECT login, pass_hash FROM coordinators WHERE login = ${login}`;
+  if (!rows.length) return { ok: false };
+  if (!verifyPassword(pass, rows[0].pass_hash)) return { ok: false };
+  return { ok: true, login };
 }
 
 // Помогает читать JSON-тело запроса в serverless-функции.
