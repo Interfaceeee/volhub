@@ -1,10 +1,16 @@
 // Общий модуль для работы с базой Neon (Postgres).
-// Использует переменную окружения DATABASE_URL, которую Vercel
-// подставит автоматически после подключения интеграции Neon.
+// Берёт строку подключения из любой из стандартных переменных,
+// которые создаёт интеграция Neon на Vercel.
 
 import { neon } from '@neondatabase/serverless';
 
-const sql = neon(process.env.DATABASE_URL || process.env.POSTGRES_URL);
+const CONN =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.POSTGRES_URL_NO_SSL;
+
+const sql = neon(CONN);
 
 // Создаёт таблицы при первом обращении (безопасно вызывать всегда).
 let ready = false;
@@ -31,6 +37,17 @@ export async function ensureSchema() {
       vest        BOOLEAN DEFAULT false,
       created_at  TIMESTAMPTZ DEFAULT now()
     )`;
+  // профили волонтёров: телефон — логин (без подтверждения)
+  await sql`
+    CREATE TABLE IF NOT EXISTS volunteers (
+      phone       TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      birthday    TEXT,
+      created_at  TIMESTAMPTZ DEFAULT now()
+    )`;
+  // поля логина/пароля сканера билетов на событии (вводит координатор)
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_login TEXT`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_pass TEXT`;
   ready = true;
 }
 
