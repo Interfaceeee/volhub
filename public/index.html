@@ -73,6 +73,14 @@
   .search:focus{border-color:var(--green)}
   .icon-btn{background:none; border:1.5px solid var(--line); border-radius:10px; padding:7px 9px; font-size:15px; cursor:pointer; line-height:1}
   .icon-btn:hover{border-color:var(--green)}
+  .avatar{width:60px; height:60px; flex:0 0 auto; border-radius:50%; background:var(--green-soft);
+    color:var(--green); display:flex; align-items:center; justify-content:center}
+  .modal-bg{position:fixed; inset:0; background:rgba(14,21,28,.45); z-index:100; display:flex;
+    align-items:center; justify-content:center; padding:24px; animation:fadeIn .2s ease both}
+  .modal{background:var(--card); border-radius:20px; padding:24px; max-width:380px; width:100%;
+    text-align:center; animation:pop .25s ease both}
+  .modal-ttl{font-size:20px; font-weight:800; margin-bottom:10px}
+  .modal-text{font-size:14px; color:var(--sub); line-height:1.5; margin-bottom:18px}
 
   /* event page */
   .back-btn{background:none; border:none; color:var(--sub); font-size:15px; font-weight:600;
@@ -275,8 +283,13 @@ const WDF=['воскресенье','понедельник','вторник','�
 function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MO[+m-1]} ${y}`; }
 function fmtDateFull(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MOF[+m-1]}`; }
 function weekday(iso){ if(!iso) return ''; return WDF[new Date(iso).getDay()]; }
-// событие прошло, если его дата раньше сегодняшнего дня. Без даты — считаем предстоящим.
-function isPast(iso){ if(!iso) return false; const today=new Date(); today.setHours(0,0,0,0); return new Date(iso) < today; }
+// событие прошло, если его дата+время уже позади. Без времени — конец того дня. Без даты — не прошло.
+function isPast(iso, time){
+  if(!iso) return false;
+  const end = new Date(iso + 'T' + (time && /^\d{2}:\d{2}/.test(time) ? time : '23:59'));
+  return end < new Date();
+}
+function isPastEvent(e){ return isPast(e.date, e.time); }
 
 const headerSub = document.getElementById('header-sub');
 function setHeaderSub(){
@@ -323,7 +336,7 @@ function bindVolNav(){
   const e=document.getElementById('nav-events'), p=document.getElementById('nav-profile'), a=document.getElementById('nav-awards');
   if(e) e.onclick=()=>{ vol.vtab='events'; vol.view='list'; render(); };
   if(p) p.onclick=()=>{ vol.vtab='profile'; vol.view='list'; render(); };
-  if(a) a.onclick=()=>{ /* раздел в разработке — пока не переходит */ };
+  if(a) a.onclick=()=>{ showModal('🏆 Достижения', 'Скоро здесь появятся уровни и награды за волонтёрство: бесплатные билеты, мерч, приоритетная запись и не только. Мы ещё придумываем, что туда добавить — следи за обновлениями!'); };
 }
 
 // --- ВХОД / РЕГИСТРАЦИЯ ВОЛОНТЁРА ---
@@ -400,7 +413,7 @@ function eventCardHTML(e, signedIds){
 }
 function renderList(){
   // на главной показываем только актуальные (прошедшие скрываем)
-  const upcoming = state.events.filter(e=> !isPast(e.date));
+  const upcoming = state.events.filter(e=> !isPastEvent(e));
   const dates = [...new Set(upcoming.map(e=>e.date).filter(Boolean))].sort();
   // подписи месяцев над лентой (по уникальным месяцам в датах)
   let monthsHtml = '';
@@ -444,18 +457,19 @@ function renderEventPage(){
   const e = state.events.find(x=>x.id===vol.eventId);
   if(!e){ vol.view='list'; renderList(); return; }
   const taken=+e.taken||0, full=taken>=e.need;
+  const approved=+e.approved_count||0;
   const already = vol.mySignups.find(s=>s.event_id===e.id);
 
   el.innerHTML = `
     <button class="back-btn" id="back">‹ Назад к событиям</button>
     <div class="evpage">
-      <div class="evpage-img">${eventImg(e)}</div>
+      <div class="evpage-img">${eventImg(e)}${e.time?`<span class="evpage-time">к ${esc(e.time)}</span>`:''}</div>
       <div class="evpage-sheet">
         <h1 class="evpage-ttl">${esc(e.title)}</h1>
         ${e.date?`<div class="evpage-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
         ${e.place?`<div class="evpage-row"><span class="evpage-label">Место</span><div class="evpage-place">${esc(e.place)}</div></div>`:''}
         <div class="evpage-row"><span class="evpage-label">Волонтёры</span>
-          <div>${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Записано ${taken} из ${e.need}</span>`}</div>
+          <div>${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Записано ${approved} из ${e.need}</span>`}</div>
         </div>
         ${already
           ? `<div class="evpage-block">
@@ -514,33 +528,57 @@ function renderDone(){
     <h2 style="margin:0 0 6px;font-size:19px">Заявка отправлена</h2>
     <p class="muted">${esc(me.name)}, вы записаны на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
     <p class="muted">Координатор подтвердит участие. После подтверждения в профиле появятся логин и пароль для сканера билетов.</p>
-    <button class="btn" id="again" style="margin-top:8px">К списку событий</button>
+    ${!me.tg_linked?`<div class="scan-box" style="text-align:left;margin-top:14px">
+      <div style="font-weight:800;margin-bottom:4px">🔔 Подключи Telegram</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Чтобы не пропустить подтверждение и сразу получить доступ к сканеру — привяжи Telegram. Уведомления придут прямо в мессенджер.</div>
+      <button class="btn small" id="done-tg">Привязать Telegram</button>
+    </div>`:''}
+    <button class="btn ghost" id="again" style="margin-top:12px">К списку событий</button>
   </div>`;
   document.getElementById('again').onclick=()=>{ vol.view='list'; vol.vtab='events'; render(); };
+  const dtg=document.getElementById('done-tg');
+  if(dtg) dtg.onclick=async()=>{
+    dtg.disabled=true; dtg.textContent='Подождите…';
+    const r=await api.tgLink(); const d=await r.json();
+    if(r.ok && d.link){ window.open(d.link,'_blank'); dtg.textContent='Открыть бота'; dtg.disabled=false; dtg.onclick=()=>window.open(d.link,'_blank'); }
+    else { dtg.disabled=false; dtg.textContent='Привязать Telegram'; }
+  };
 }
 
 // --- ПРОФИЛЬ ВОЛОНТЁРА ---
 function renderProfile(){
-  const cards = vol.mySignups.map(s=>{
+  const signupCard = (s, past)=>{
     const appr = s.status==='approved';
-    return `<div class="card">
+    return `<div class="card"${past?' style="opacity:.55"':''}>
       <div style="font-weight:800;font-size:16px">${esc(s.title)}</div>
       <div class="muted" style="margin-top:2px">${s.date?fmtDateFull(s.date)+', '+weekday(s.date):''}${s.place?' · '+esc(s.place):''}</div>
-      <div style="margin-top:8px"><span class="pill ${appr?'green':'amber'}">${appr?'Подтверждён':'Ждёт подтверждения'}</span></div>
-      ${appr && (s.scan_login||s.scan_pass) ? `<div class="scan-box">
+      <div style="margin-top:8px"><span class="pill ${past?'amber':(appr?'green':'amber')}">${past?'Завершено':(appr?'Подтверждён':'Ждёт подтверждения')}</span></div>
+      ${!past && appr && (s.scan_login||s.scan_pass) ? `<div class="scan-box">
         <div class="scan-ttl">Доступ к сканеру билетов</div>
         <div class="scan-row"><span>Логин</span><b>${esc(s.scan_login||'—')}</b></div>
         <div class="scan-row"><span>Пароль</span><b>${esc(s.scan_pass||'—')}</b></div>
-      </div>` : (appr?'<div class="muted" style="margin-top:8px;font-size:13px">Доступ к сканеру координатор добавит позже.</div>':'')}
-      <button class="btn danger-outline small" data-cancel="${esc(s.event_id)}" style="margin-top:12px">Отменить запись</button>
+      </div>` : (!past && appr?'<div class="muted" style="margin-top:8px;font-size:13px">Доступ к сканеру координатор добавит позже.</div>':'')}
+      ${past?'':`<button class="btn danger-outline small" data-cancel="${esc(s.event_id)}" style="margin-top:12px">Отменить запись</button>`}
     </div>`;
-  }).join('');
+  };
+  // определяем прошедшие по данным события (дата+время)
+  const evById = {}; state.events.forEach(e=>evById[e.id]=e);
+  const isPastSignup = s=>{ const e=evById[s.event_id]; return e?isPastEvent(e):isPast(s.date, s.time); };
+  const active = vol.mySignups.filter(s=>!isPastSignup(s));
+  const passed = vol.mySignups.filter(s=>isPastSignup(s));
+  const cards = active.map(s=>signupCard(s,false)).join('') +
+    (passed.length?`<div class="section-label" style="margin-top:8px">Прошедшие:</div>${passed.map(s=>signupCard(s,true)).join('')}`:'');
 
   el.innerHTML = `
     <div class="card" style="margin-top:8px">
-      <div style="font-weight:800;font-size:18px">${esc(me.name)}</div>
-      <div class="muted" style="margin-top:2px">${esc(me.phone)}</div>
-      ${me.birthday?`<div class="muted" style="margin-top:2px">День рождения: ${fmtDateFull(me.birthday)}</div>`:''}
+      <div style="display:flex;align-items:center;gap:14px">
+        <div class="avatar"><svg width="32" height="32" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.5" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 20c0-3.9 3.4-6.5 7.5-6.5s7.5 2.6 7.5 6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:18px">${esc(me.name)}</div>
+          <div class="muted" style="margin-top:2px">${esc(me.phone)}</div>
+          ${me.birthday?`<div class="muted" style="margin-top:2px">День рождения: ${fmtDateFull(me.birthday)}</div>`:''}
+        </div>
+      </div>
       <button class="btn ghost small" id="logout" style="margin-top:12px">Выйти</button>
     </div>
     <div class="card">
@@ -573,6 +611,15 @@ function renderProfile(){
   bindVolNav();
 }
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
+function showModal(title, text, btnText){
+  document.getElementById('modal-bg')?.remove();
+  const bg=document.createElement('div'); bg.id='modal-bg'; bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal"><div class="modal-ttl">${title}</div><div class="modal-text">${text}</div><button class="btn" id="modal-ok">${btnText||'Понятно'}</button></div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelector('#modal-ok').onclick=close;
+  bg.onclick=e=>{ if(e.target===bg) close(); };
+}
 
 // ---------- COORDINATOR ----------
 let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null, q:'', limit:20, teamTab:'volunteers', teamQ:'', viewUser:null };
@@ -628,7 +675,10 @@ function drawCoordinator(){
 
   if(coord.tab==='people'){
     const q=(coord.q||'').trim().toLowerCase();
-    let visible = s.filter(x=> coord.filter==='all'? x.status!=='rejected' : x.status===coord.filter);
+    // карта событий — чтобы прятать заявки прошедших
+    const evMap={}; state.events.forEach(e=>evMap[e.id]=e);
+    const eventPast = id=>{ const e=evMap[id]; return e?isPastEvent(e):false; };
+    let visible = s.filter(x=> (coord.filter==='all'? x.status!=='rejected' : x.status===coord.filter) && !eventPast(x.event_id));
     if(q) visible = visible.filter(x=> (x.name||'').toLowerCase().includes(q) || (x.phone||'').toLowerCase().includes(q));
     const total = visible.length;
     const page = visible.slice(0, coord.limit);
@@ -701,6 +751,7 @@ function drawCoordinator(){
         return `<div class="card">
           <label><span>Название</span><input id="ed-title" value="${esc(e.title)}"></label>
           <label><span>Дата</span><input id="ed-date" type="date" value="${esc(e.date||'')}"></label>
+          <label><span>Время</span><input id="ed-time" type="time" value="${esc(e.time||'')}"></label>
           <label><span>Место</span><input id="ed-place" value="${esc(e.place||'')}" placeholder="Адрес или площадка"></label>
           <label><span>Сколько волонтёров нужно</span><input id="ed-need" type="number" inputmode="numeric" value="${e.need}"></label>
           <label><span>Логин сканера билетов</span><input id="ed-slogin" value="${esc(e.scan_login||'')}" placeholder="логин для приложения-сканера"></label>
@@ -712,7 +763,7 @@ function drawCoordinator(){
         </div>`;
       }
       const hasScan = e.scan_login||e.scan_pass;
-      const past = isPast(e.date);
+      const past = isPastEvent(e);
       return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px${past?';opacity:.6':''}">
       <div><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
         <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div>
@@ -723,8 +774,8 @@ function drawCoordinator(){
       </div></div>`;
     };
     const sortByDate = (a,b)=> (a.date||'').localeCompare(b.date||'');
-    const upcoming = state.events.filter(e=>!isPast(e.date)).sort(sortByDate);
-    const past = state.events.filter(e=>isPast(e.date)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    const upcoming = state.events.filter(e=>!isPastEvent(e)).sort(sortByDate);
+    const past = state.events.filter(e=>isPastEvent(e)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     const evs = `
       <div class="section-label">Предстоящие (${upcoming.length}):</div>
       ${upcoming.length?upcoming.map(evCardCoord).join(''):'<div class="card center muted">Нет предстоящих событий.</div>'}
@@ -736,6 +787,7 @@ function drawCoordinator(){
       <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Новое событие</h3>
         <label><span>Название</span><input id="e-title" placeholder="Концерт, спектакль…"></label>
         <label><span>Дата</span><input id="e-date" type="date"></label>
+        <label><span>Время (необязательно)</span><input id="e-time" type="time"></label>
         <label><span>Место</span><input id="e-place" placeholder="Адрес или площадка"></label>
         <label><span>Сколько волонтёров нужно</span><input id="e-need" type="number" inputmode="numeric" value="4"></label>
         <label><span>Логин сканера билетов (необязательно)</span><input id="e-slogin" placeholder="логин для приложения-сканера"></label>
@@ -756,23 +808,25 @@ function drawCoordinator(){
       const id=b.dataset.save;
       const title=document.getElementById('ed-title').value.trim();
       const date=document.getElementById('ed-date').value;
+      const time=document.getElementById('ed-time').value;
       const place=document.getElementById('ed-place').value.trim();
       const need=+document.getElementById('ed-need').value||4;
       const scan_login=document.getElementById('ed-slogin').value.trim();
       const scan_pass=document.getElementById('ed-spass').value.trim();
       if(!title){ return; }
-      await api.addEvent({id,title,date:date||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null});
+      await api.addEvent({id,title,date:date||null,time:time||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null});
       coord.editing=null; state.events=await api.eventsCoord(); drawCoordinator();
     });
     document.getElementById('e-add').onclick=async()=>{
       const title=document.getElementById('e-title').value.trim();
       const date=document.getElementById('e-date').value;
+      const time=document.getElementById('e-time').value;
       const place=document.getElementById('e-place').value.trim();
       const need=+document.getElementById('e-need').value||4;
       const scan_login=document.getElementById('e-slogin').value.trim();
       const scan_pass=document.getElementById('e-spass').value.trim();
       if(!title){ return; }
-      await api.addEvent({title,date:date||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); state.events=await api.eventsCoord(); drawCoordinator();
+      await api.addEvent({title,date:date||null,time:time||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); state.events=await api.eventsCoord(); drawCoordinator();
     };
   } else if(coord.tab==='team') {
     el.innerHTML = stats + subtabs + `<div id="team-zone"></div>`;
