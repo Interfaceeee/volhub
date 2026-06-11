@@ -15,8 +15,10 @@ function normPhone(p) {
 
 // собрать профиль + записи волонтёра (сканер только по подтверждённым)
 async function profileWithSignups(phone) {
-  const prof = await sql`SELECT phone, name, birthday FROM volunteers WHERE phone = ${phone}`;
+  const prof = await sql`SELECT phone, name, birthday, tg_chat_id FROM volunteers WHERE phone = ${phone}`;
   if (!prof.length) return null;
+  const p = prof[0];
+  const profile = { phone: p.phone, name: p.name, birthday: p.birthday, tg_linked: !!p.tg_chat_id };
   const rows = await sql`
     SELECT s.id, s.status, s.badge, s.vest, s.event_id,
            e.title, e.date, e.place,
@@ -25,7 +27,7 @@ async function profileWithSignups(phone) {
     FROM signups s JOIN events e ON e.id = s.event_id
     WHERE s.phone = ${phone}
     ORDER BY e.date NULLS LAST`;
-  return { profile: prof[0], signups: rows };
+  return { profile, signups: rows };
 }
 
 export default async function handler(req, res) {
@@ -60,6 +62,17 @@ export default async function handler(req, res) {
       if (!rows.length) return res.status(404).json({ error: 'Профиль не найден. Зарегистрируйтесь.' });
       if (!verifyPassword(password, rows[0].pass_hash)) return res.status(401).json({ error: 'Неверный пароль' });
       return res.status(200).json(await profileWithSignups(phone));
+    }
+
+    // выдать код привязки Telegram (нужен телефон+пароль)
+    if (action === 'tglink') {
+      const password = b.password || '';
+      const rows = await sql`SELECT pass_hash FROM volunteers WHERE phone = ${phone}`;
+      if (!rows.length || !verifyPassword(password, rows[0].pass_hash)) return res.status(401).json({ error: 'Неверный пароль' });
+      const code = 'v' + Math.random().toString(36).slice(2, 9);
+      await sql`UPDATE volunteers SET tg_code = ${code} WHERE phone = ${phone}`;
+      const bot = process.env.TELEGRAM_BOT_USERNAME || '';
+      return res.status(200).json({ ok: true, code, bot, link: bot ? `https://t.me/${bot}?start=${code}` : null });
     }
 
     return res.status(400).json({ error: 'Неизвестное действие' });
