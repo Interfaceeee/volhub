@@ -82,6 +82,19 @@
   .sticky-bar{position:fixed; left:0; right:0; bottom:0; padding:12px 16px;
     background:var(--card); border-top:1px solid var(--line); z-index:20}
   .sticky-bar .btn{max-width:460px; margin:0 auto; display:block}
+
+  .hello{font-size:15px; font-weight:700; color:var(--ink); margin:4px 2px 6px}
+  .vnav{position:fixed; left:0; right:0; bottom:0; display:flex; gap:8px; max-width:460px; margin:0 auto;
+    padding:10px 16px; background:var(--card); border-top:1px solid var(--line); z-index:15}
+  .vnav-btn{flex:1; padding:11px 0; border-radius:12px; font-size:14px; font-weight:700; font-family:inherit;
+    border:none; background:#E7E9EB; color:var(--sub); cursor:pointer}
+  .vnav-btn.on{background:var(--green); color:#fff}
+  .scan-box{margin-top:12px; padding:12px; border-radius:12px; background:var(--green-soft); border:1px solid #CDEAC4}
+  .scan-ttl{font-size:13px; font-weight:800; color:var(--green-dark); margin-bottom:8px}
+  .scan-row{display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:14px}
+  .scan-row span{color:var(--sub)}
+  .scan-row b{color:var(--ink); font-family:ui-monospace,monospace; font-size:15px}
+  main{padding-bottom:80px}
   .ecard .foot{display:flex; align-items:center; justify-content:space-between; margin-top:10px}
 
   /* generic card / forms */
@@ -145,10 +158,12 @@
 
 <script>
 const PIN_KEY = '__vh_pin';
+const PHONE_KEY = '__vh_phone';
 let state = { mode:'volunteer', events:[], signups:[], pin:sessionStorage.getItem(PIN_KEY)||null };
 
 const api = {
   async events(){ const r = await fetch('/api/events'); return (await r.json()).events||[]; },
+  async eventsCoord(){ const r = await fetch('/api/events',{headers:{'x-coord-pin':state.pin}}); return (await r.json()).events||[]; },
   async signup(d){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
   async listSignups(){ const r = await fetch('/api/signups',{headers:{'x-coord-pin':state.pin}}); if(r.status===401) return null; return (await r.json()).signups||[]; },
   async patch(d){ return fetch('/api/signups',{method:'PATCH',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
@@ -156,6 +171,11 @@ const api = {
   async addEvent(d){ return fetch('/api/events',{method:'POST',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
   async delEvent(id){ return fetch('/api/events?id='+encodeURIComponent(id),{method:'DELETE',headers:{'x-coord-pin':state.pin}}); },
   async sync(){ return fetch('/api/sync',{method:'POST',headers:{'x-coord-pin':state.pin}}); },
+  // профили волонтёров
+  async saveProfile(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
+  async getProfile(phone){ const r=await fetch('/api/volunteers?phone='+encodeURIComponent(phone)); if(r.status!==200) return null; return r.json(); },
+  async listVolunteers(){ const r=await fetch('/api/volunteers',{headers:{'x-coord-pin':state.pin}}); if(r.status!==200) return []; return (await r.json()).volunteers||[]; },
+  async patchVolunteer(d){ return fetch('/api/volunteers',{method:'PATCH',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
 };
 
 const el = document.getElementById('app');
@@ -181,13 +201,64 @@ function eventImg(e){
 }
 
 // ---------- VOLUNTEER ----------
-// view: 'list' (список событий) | 'event' (страница события) | 'done' (успех)
-let vol = { name:'', phone:'', eventId:'', view:'list', day:'all' };
+// me: профиль текущего волонтёра {phone,name,birthday} или null
+// vtab: 'events' | 'profile'   |   view: 'list' | 'event' | 'done'
+let me = null;
+let vol = { eventId:'', view:'list', day:'all', vtab:'events', mySignups:[] };
+
+// при старте пробуем подтянуть профиль по сохранённому телефону
+async function initVolunteer(){
+  const saved = localStorage.getItem(PHONE_KEY);
+  if(saved){
+    const data = await api.getProfile(saved);
+    if(data && data.profile){ me = data.profile; vol.mySignups = data.signups||[]; }
+  }
+}
 
 function renderVolunteer(){
+  if(!me){ renderLogin(); return; }
   if(vol.view==='done'){ renderDone(); return; }
   if(vol.view==='event'){ renderEventPage(); return; }
+  if(vol.vtab==='profile'){ renderProfile(); return; }
   renderList();
+}
+
+// нижние вкладки волонтёра
+function volNav(){
+  return `<div class="vnav">
+    <button class="vnav-btn ${vol.vtab==='events'?'on':''}" id="nav-events">События</button>
+    <button class="vnav-btn ${vol.vtab==='profile'?'on':''}" id="nav-profile">Профиль</button>
+  </div>`;
+}
+function bindVolNav(){
+  const e=document.getElementById('nav-events'), p=document.getElementById('nav-profile');
+  if(e) e.onclick=()=>{ vol.vtab='events'; vol.view='list'; render(); };
+  if(p) p.onclick=()=>{ vol.vtab='profile'; render(); };
+}
+
+// --- ВХОД / РЕГИСТРАЦИЯ ПРОФИЛЯ ---
+function renderLogin(){
+  el.innerHTML = `<div class="card" style="margin-top:16px">
+    <h2 style="margin:0 0 4px;font-size:19px">Добро пожаловать!</h2>
+    <p class="muted" style="margin:0 0 16px">Заполни профиль один раз — потом записываться можно в один тап.</p>
+    <label><span>Имя и фамилия</span><input id="lg-name" placeholder="Айгуль Асанова"></label>
+    <label><span>Телефон</span><input id="lg-phone" inputmode="tel" placeholder="+996 700 000 000"></label>
+    <label><span>Дата рождения</span><input id="lg-bday" type="date"></label>
+    <div class="err" id="lg-err" style="display:none"></div>
+    <button class="btn" id="lg-go">Войти</button>
+  </div>`;
+  document.getElementById('lg-go').onclick=async()=>{
+    const name=document.getElementById('lg-name').value.trim();
+    const phone=document.getElementById('lg-phone').value.trim();
+    const bday=document.getElementById('lg-bday').value;
+    if(!name||!phone){ showErr('lg-err','Заполни имя и телефон'); return; }
+    const r=await api.saveProfile({name,phone,birthday:bday||null});
+    if(!r.ok){ showErr('lg-err','Не получилось войти. Попробуй ещё раз.'); return; }
+    localStorage.setItem(PHONE_KEY, phone);
+    const data=await api.getProfile(phone);
+    me=data.profile; vol.mySignups=data.signups||[];
+    vol.vtab='events'; vol.view='list'; render();
+  };
 }
 
 // --- СПИСОК СОБЫТИЙ ---
@@ -204,8 +275,9 @@ function renderList(){
       }).join('') + `</div>`;
   }
   const shown = state.events.filter(e=> vol.day==='all' || e.date===vol.day);
+  const signedIds = new Set(vol.mySignups.map(s=>s.event_id));
   const evCards = shown.map(e=>{
-    const taken=+e.taken||0, full=taken>=e.need;
+    const taken=+e.taken||0, full=taken>=e.need, mine=signedIds.has(e.id);
     return `<button class="ecard" data-id="${esc(e.id)}">
       <div class="img">${eventImg(e)}</div>
       <div class="body">
@@ -213,18 +285,19 @@ function renderList(){
         ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
         ${e.place?`<div class="meta-place">${esc(e.place)}</div>`:''}
         <div class="foot">
-          ${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Нужно волонтёров: ${taken}/${e.need}</span>`}
+          ${mine?'<span class="pill green">✓ Вы записаны</span>':(full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Нужно волонтёров: ${taken}/${e.need}</span>`)}
         </div>
       </div>
     </button>`;
   }).join('');
 
-  el.innerHTML = calHtml +
+  el.innerHTML = `<div class="hello">Привет, ${esc(me.name.split(' ')[0])}!</div>` + calHtml +
     `<div class="section-label">Выбери событие:</div>
-    ${shown.length?evCards:'<div class="card center muted">На этот день событий нет.</div>'}`;
+    ${shown.length?evCards:'<div class="card center muted">На этот день событий нет.</div>'}` + volNav();
 
   document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
   document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
+  bindVolNav();
 }
 
 // --- СТРАНИЦА СОБЫТИЯ ---
@@ -232,6 +305,7 @@ function renderEventPage(){
   const e = state.events.find(x=>x.id===vol.eventId);
   if(!e){ vol.view='list'; renderList(); return; }
   const taken=+e.taken||0, full=taken>=e.need;
+  const already = vol.mySignups.find(s=>s.event_id===e.id);
 
   el.innerHTML = `
     <button class="back-btn" id="back">‹ Назад к событиям</button>
@@ -246,27 +320,33 @@ function renderEventPage(){
         </div>
       </div>
     </div>
-
-    <div class="reg-card">
-      <h3 class="reg-ttl">Записаться волонтёром</h3>
-      <label><span>Имя и фамилия</span><input id="v-name" placeholder="Айгуль Асанова" value="${esc(vol.name)}"></label>
-      <label><span>Телефон</span><input id="v-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(vol.phone)}"></label>
-      <div class="err" id="v-err" style="display:none"></div>
-    </div>
-
-    <div class="sticky-bar">
+    ${already
+      ? `<div class="card center"><p class="muted" style="margin:6px 0">Вы уже записаны на это событие. Статус: <b style="color:var(--ink)">${already.status==='approved'?'подтверждён':'ждёт подтверждения'}</b>.</p></div>`
+      : `<div class="reg-card">
+          <h3 class="reg-ttl">Записаться волонтёром</h3>
+          <p class="muted" style="margin:-6px 0 0">Запишем как <b style="color:var(--ink)">${esc(me.name)}</b> (${esc(me.phone)})</p>
+          <div class="err" id="v-err" style="display:none;margin-top:10px"></div>
+        </div>`}
+    ${already?'':`<div class="sticky-bar">
       <button class="btn" id="v-submit" ${full?'disabled':''}>${full?'Мест больше нет':'Записаться'}</button>
-    </div>`;
+    </div>`}`;
 
   document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
-  document.getElementById('v-name').oninput=ev=>vol.name=ev.target.value;
-  document.getElementById('v-phone').oninput=ev=>vol.phone=ev.target.value;
-  document.getElementById('v-submit').onclick=async()=>{
-    if(!vol.name.trim()||!vol.phone.trim()){ showErr('v-err','Заполни имя и телефон'); return; }
-    const r = await api.signup({name:vol.name,phone:vol.phone,eventId:vol.eventId});
-    if(r.ok){ vol.view='done'; await loadEvents(); render(); }
+  const sub=document.getElementById('v-submit');
+  if(sub) sub.onclick=async()=>{
+    // спросим разрешение на уведомления при первой записи (если поддерживается)
+    try{ if('Notification' in window && Notification.permission==='default'){ await Notification.requestPermission(); } }catch(_){}
+    const r = await api.signup({name:me.name,phone:me.phone,eventId:vol.eventId});
+    if(r.ok){ await refreshMine(); vol.view='done'; await loadEvents(); render(); }
     else showErr('v-err','Не получилось отправить. Попробуй ещё раз.');
   };
+}
+
+// обновить свои записи
+async function refreshMine(){
+  if(!me) return;
+  const data=await api.getProfile(me.phone);
+  if(data){ vol.mySignups=data.signups||[]; me=data.profile; }
 }
 
 // --- УСПЕХ ---
@@ -275,16 +355,46 @@ function renderDone(){
   el.innerHTML = `<div class="card center" style="margin-top:20px">
     <div style="font-size:44px;margin-bottom:6px">🎉</div>
     <h2 style="margin:0 0 6px;font-size:19px">Заявка отправлена</h2>
-    <p class="muted">${esc(vol.name)}, ты записан(а) на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
-    <p class="muted">Координатор подтвердит участие и выдаст бейдж с манишкой на месте.</p>
+    <p class="muted">${esc(me.name)}, вы записаны на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
+    <p class="muted">Координатор подтвердит участие. После подтверждения в профиле появятся логин и пароль для сканера билетов.</p>
     <button class="btn" id="again" style="margin-top:8px">К списку событий</button>
   </div>`;
-  document.getElementById('again').onclick=()=>{ vol={name:'',phone:'',eventId:'',view:'list',day:'all'}; render(); };
+  document.getElementById('again').onclick=()=>{ vol.view='list'; vol.vtab='events'; render(); };
+}
+
+// --- ПРОФИЛЬ ВОЛОНТЁРА ---
+function renderProfile(){
+  const cards = vol.mySignups.map(s=>{
+    const appr = s.status==='approved';
+    return `<div class="card">
+      <div style="font-weight:800;font-size:16px">${esc(s.title)}</div>
+      <div class="muted" style="margin-top:2px">${s.date?fmtDateFull(s.date)+', '+weekday(s.date):''}${s.place?' · '+esc(s.place):''}</div>
+      <div style="margin-top:8px"><span class="pill ${appr?'green':'amber'}">${appr?'Подтверждён':'Ждёт подтверждения'}</span></div>
+      ${appr && (s.scan_login||s.scan_pass) ? `<div class="scan-box">
+        <div class="scan-ttl">Доступ к сканеру билетов</div>
+        <div class="scan-row"><span>Логин</span><b>${esc(s.scan_login||'—')}</b></div>
+        <div class="scan-row"><span>Пароль</span><b>${esc(s.scan_pass||'—')}</b></div>
+      </div>` : (appr?'<div class="muted" style="margin-top:8px;font-size:13px">Доступ к сканеру координатор добавит позже.</div>':'')}
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:8px">
+      <div style="font-weight:800;font-size:18px">${esc(me.name)}</div>
+      <div class="muted" style="margin-top:2px">${esc(me.phone)}</div>
+      ${me.birthday?`<div class="muted" style="margin-top:2px">День рождения: ${fmtDateFull(me.birthday)}</div>`:''}
+      <button class="btn ghost small" id="logout" style="margin-top:12px">Выйти</button>
+    </div>
+    <div class="section-label">Мои записи:</div>
+    ${vol.mySignups.length?cards:'<div class="card center muted">Вы ещё никуда не записались.</div>'}` + volNav();
+
+  document.getElementById('logout').onclick=()=>{ localStorage.removeItem(PHONE_KEY); me=null; vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[]}; render(); };
+  bindVolNav();
 }
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
 
 // ---------- COORDINATOR ----------
-let coord = { tab:'people', filter:'all', err:'', editing:null };
+let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null };
 function renderCoordinator(){
   if(!state.pin){ renderPin(); return; }
   el.innerHTML = `<div class="loading">Загрузка…</div>`;
@@ -303,7 +413,7 @@ function renderPin(errMsg){
   </div>`;
   const go=async()=>{ const v=document.getElementById('pin').value.trim(); state.pin=v; const list=await api.listSignups();
     if(list===null){ state.pin=null; renderPin('Неверный PIN'); return; }
-    sessionStorage.setItem(PIN_KEY,v); state.signups=list; await loadEvents(); drawCoordinator(); };
+    sessionStorage.setItem(PIN_KEY,v); state.signups=list; state.events=await api.eventsCoord(); drawCoordinator(); };
   document.getElementById('pin-go').onclick=go;
   document.getElementById('pin').onkeydown=e=>{ if(e.key==='Enter') go(); };
 }
@@ -327,6 +437,16 @@ function drawCoordinator(){
     const visible = s.filter(x=> coord.filter==='all'? x.status!=='rejected' : x.status===coord.filter);
     const cards = visible.map(x=>{
       const pending = x.status==='pending';
+      if(coord.editingVol===x.id){
+        return `<div class="card">
+          <label><span>Имя и фамилия</span><input id="ev-name" value="${esc(x.name)}"></label>
+          <label><span>Телефон</span><input id="ev-phone" value="${esc(x.phone)}"></label>
+          <div class="row">
+            <button class="btn small" data-vsave="${x.id}" data-vphone="${esc(x.phone)}">Сохранить</button>
+            <button class="btn small ghost" data-vcancel="1">Отмена</button>
+          </div>
+        </div>`;
+      }
       return `<div class="card">
         <div style="display:flex;justify-content:space-between;gap:8px">
           <div><div style="font-weight:800;font-size:16px">${esc(x.name)}</div>
@@ -336,10 +456,13 @@ function drawCoordinator(){
         </div>
         ${pending?`<div class="row">
             <button class="btn small" data-act="approve" data-id="${x.id}">Подтвердить</button>
+            <button class="btn small ghost" data-vedit="${x.id}">Изменить</button>
             <button class="btn small danger" data-act="del" data-id="${x.id}">Удалить</button></div>`
           :`<div class="row">
             <button class="toggle ${x.badge?'on':''}" data-act="badge" data-id="${x.id}">${x.badge?'✓ ':''}Бейдж</button>
-            <button class="toggle ${x.vest?'on':''}" data-act="vest" data-id="${x.id}">${x.vest?'✓ ':''}Манишка</button></div>`}
+            <button class="toggle ${x.vest?'on':''}" data-act="vest" data-id="${x.id}">${x.vest?'✓ ':''}Манишка</button></div>
+          <div class="row"><button class="btn small ghost" data-vedit="${x.id}">Изменить данные</button>
+            <button class="btn small danger" data-act="del" data-id="${x.id}">Удалить</button></div>`}
       </div>`;
     }).join('');
     el.innerHTML = stats + subtabs + `<div class="filters">
@@ -356,6 +479,19 @@ function drawCoordinator(){
       if(act==='vest'){ const cur=state.signups.find(x=>x.id===id); await api.patch({id,vest:!cur.vest}); }
       state.signups = await api.listSignups(); drawCoordinator();
     });
+    document.querySelectorAll('[data-vedit]').forEach(b=>b.onclick=()=>{ coord.editingVol=b.dataset.vedit; drawCoordinator(); });
+    document.querySelectorAll('[data-vcancel]').forEach(b=>b.onclick=()=>{ coord.editingVol=null; drawCoordinator(); });
+    document.querySelectorAll('[data-vsave]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.vsave, oldPhone=b.dataset.vphone;
+      const name=document.getElementById('ev-name').value.trim();
+      const phone=document.getElementById('ev-phone').value.trim();
+      if(!name||!phone){ return; }
+      // обновим заявку
+      await api.patch({id,name,phone});
+      // и профиль волонтёра (по старому телефону правим имя/телефон)
+      await api.patchVolunteer({phone:oldPhone,name});
+      coord.editingVol=null; state.signups=await api.listSignups(); drawCoordinator();
+    });
   } else {
     const evs = state.events.map(e=>{
       if (coord.editing === e.id) {
@@ -364,15 +500,19 @@ function drawCoordinator(){
           <label><span>Дата</span><input id="ed-date" type="date" value="${esc(e.date||'')}"></label>
           <label><span>Место</span><input id="ed-place" value="${esc(e.place||'')}" placeholder="Адрес или площадка"></label>
           <label><span>Сколько волонтёров нужно</span><input id="ed-need" type="number" inputmode="numeric" value="${e.need}"></label>
+          <label><span>Логин сканера билетов</span><input id="ed-slogin" value="${esc(e.scan_login||'')}" placeholder="логин для приложения-сканера"></label>
+          <label><span>Пароль сканера билетов</span><input id="ed-spass" value="${esc(e.scan_pass||'')}" placeholder="пароль для приложения-сканера"></label>
           <div class="row">
             <button class="btn small" data-save="${esc(e.id)}">Сохранить</button>
             <button class="btn small ghost" data-cancel="1">Отмена</button>
           </div>
         </div>`;
       }
+      const hasScan = e.scan_login||e.scan_pass;
       return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
-        <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div></div>
+        <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div>
+        ${hasScan?'<div class="muted" style="margin-top:2px;font-size:12px">🔑 сканер задан</div>':''}</div>
       <div style="display:flex;gap:6px;flex:0 0 auto">
         <button class="btn small ghost" data-edit="${esc(e.id)}">Изменить</button>
         <button class="btn small danger" data-del="${esc(e.id)}">Удалить</button>
@@ -387,16 +527,18 @@ function drawCoordinator(){
         <label><span>Дата</span><input id="e-date" type="date"></label>
         <label><span>Место</span><input id="e-place" placeholder="Адрес или площадка"></label>
         <label><span>Сколько волонтёров нужно</span><input id="e-need" type="number" inputmode="numeric" value="4"></label>
+        <label><span>Логин сканера билетов (необязательно)</span><input id="e-slogin" placeholder="логин для приложения-сканера"></label>
+        <label><span>Пароль сканера билетов (необязательно)</span><input id="e-spass" placeholder="пароль для приложения-сканера"></label>
         <button class="btn" id="e-add">Добавить событие</button>
       </div>`;
     document.getElementById('sync').onclick=async()=>{
       const m=document.getElementById('sync-msg'); m.style.display='block'; m.style.color='var(--sub)'; m.textContent='Собираю события…';
       const r=await api.sync(); const j=await r.json();
       m.textContent = j.ok ? `Готово: добавлено ${j.added}, всего на афише ${j.total}.` : (j.note||'Не получилось.');
-      await loadEvents(); state.signups=await api.listSignups();
+      state.events=await api.eventsCoord(); state.signups=await api.listSignups();
       setTimeout(drawCoordinator,1200);
     };
-    document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ await api.delEvent(b.dataset.del); await loadEvents(); drawCoordinator(); });
+    document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ await api.delEvent(b.dataset.del); state.events=await api.eventsCoord(); drawCoordinator(); });
     document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ coord.editing=b.dataset.edit; drawCoordinator(); });
     document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>{ coord.editing=null; drawCoordinator(); });
     document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{
@@ -405,17 +547,21 @@ function drawCoordinator(){
       const date=document.getElementById('ed-date').value;
       const place=document.getElementById('ed-place').value.trim();
       const need=+document.getElementById('ed-need').value||4;
+      const scan_login=document.getElementById('ed-slogin').value.trim();
+      const scan_pass=document.getElementById('ed-spass').value.trim();
       if(!title){ return; }
-      await api.addEvent({id,title,date:date||null,place:place||null,need});
-      coord.editing=null; await loadEvents(); drawCoordinator();
+      await api.addEvent({id,title,date:date||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null});
+      coord.editing=null; state.events=await api.eventsCoord(); drawCoordinator();
     });
     document.getElementById('e-add').onclick=async()=>{
       const title=document.getElementById('e-title').value.trim();
       const date=document.getElementById('e-date').value;
       const place=document.getElementById('e-place').value.trim();
       const need=+document.getElementById('e-need').value||4;
+      const scan_login=document.getElementById('e-slogin').value.trim();
+      const scan_pass=document.getElementById('e-spass').value.trim();
       if(!title){ return; }
-      await api.addEvent({title,date:date||null,place:place||null,need}); await loadEvents(); drawCoordinator();
+      await api.addEvent({title,date:date||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); state.events=await api.eventsCoord(); drawCoordinator();
     };
   }
   document.getElementById('ct-people').onclick=()=>{ coord.tab='people'; drawCoordinator(); };
@@ -424,7 +570,7 @@ function drawCoordinator(){
 }
 
 function render(){ if(state.mode==='volunteer') renderVolunteer(); else renderCoordinator(); }
-(async function init(){ await loadEvents(); render(); })();
+(async function init(){ await loadEvents(); await initVolunteer(); render(); })();
 </script>
 </body>
 </html>
