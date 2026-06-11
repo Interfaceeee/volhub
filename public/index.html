@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Волонтёры Ticketon</title>
+<style>
+  :root{
+    --ink:#16130F; --paper:#FBF7F0; --card:#fff; --line:#E4DCCE;
+    --sub:#7A7064; --orange:#FF5C16; --orangeSoft:#FFE9DD; --red:#C2410C;
+    --green:#1F8A4C; --greenSoft:#DDF1E3; --amber:#B7791F; --amberSoft:#FBEFD2;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+  .wrap{max-width:440px; margin:0 auto; min-height:100vh}
+  header{padding:20px 18px 14px; border-bottom:1px solid var(--line)}
+  h1{margin:0; font-size:21px; font-weight:800; letter-spacing:-.5px;
+    display:flex; align-items:center; gap:8px}
+  .dot{width:11px;height:11px;border-radius:3px;background:var(--orange);display:inline-block}
+  header p{margin:4px 0 0 19px; font-size:13px; color:var(--sub)}
+  .tabs{display:flex; gap:8px; padding:14px; position:sticky; top:0; background:var(--paper); z-index:5}
+  .tab{flex:1; padding:11px 0; border-radius:12px; font-size:15px; font-weight:700;
+    border:1.5px solid var(--line); background:var(--card); color:var(--sub);
+    cursor:pointer; font-family:inherit}
+  .tab.active{border-color:var(--ink); background:var(--ink); color:#fff}
+  main{padding:0 14px 40px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:10px}
+  label{display:block; margin-bottom:14px}
+  label span{display:block; font-size:13px; font-weight:700; color:var(--sub); margin-bottom:6px}
+  input{width:100%; padding:13px 14px; border:1.5px solid var(--line); border-radius:12px;
+    font-size:16px; background:var(--card); color:var(--ink); font-family:inherit; outline:none}
+  input:focus{border-color:var(--orange)}
+  .btn{width:100%; padding:13px 18px; border-radius:12px; font-size:16px; font-weight:700;
+    border:1.5px solid var(--orange); background:var(--orange); color:#fff; cursor:pointer; font-family:inherit}
+  .btn:disabled{background:#EDE6DA; border-color:#EDE6DA; color:#B4AC9E; cursor:default}
+  .btn.ghost{background:transparent; color:var(--ink); border-color:var(--line)}
+  .btn.small{width:auto; padding:8px 14px; font-size:14px}
+  .btn.danger{background:transparent; color:var(--red); border-color:#F0CDBC}
+  .pill{font-size:12px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .pill.amber{background:var(--amberSoft); color:var(--amber)}
+  .pill.green{background:var(--greenSoft); color:var(--green)}
+  .ev{text-align:left; padding:14px; border-radius:14px; cursor:pointer; width:100%;
+    border:2px solid var(--line); background:var(--card); font-family:inherit; margin-bottom:10px; display:block}
+  .ev.sel{border-color:var(--orange); background:var(--orangeSoft)}
+  .ev .t{font-weight:800; font-size:16px}
+  .ev .d{font-size:13px; color:var(--sub); margin-top:4px}
+  .row{display:flex; gap:8px; margin-top:12px}
+  .toggle{flex:1; padding:10px 0; border-radius:12px; font-size:14px; font-weight:700; cursor:pointer;
+    border:1.5px solid var(--line); background:var(--card); color:var(--sub); font-family:inherit}
+  .toggle.on{border-color:var(--green); background:var(--greenSoft); color:var(--green)}
+  .stats{display:flex; gap:8px; margin:6px 0 14px}
+  .stat{flex:1; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 8px; text-align:center}
+  .stat b{font-size:22px; font-weight:800; display:block}
+  .stat span{font-size:11px; color:var(--sub); font-weight:600}
+  .muted{color:var(--sub); font-size:14px}
+  .center{text-align:center}
+  .filters{display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap}
+  .chip{font-size:13px; font-weight:700; padding:6px 12px; border-radius:999px; cursor:pointer;
+    border:1.5px solid var(--line); background:var(--card); color:var(--sub); font-family:inherit}
+  .chip.active{border-color:var(--ink); background:var(--ink); color:#fff}
+  .err{color:var(--red); font-size:13px; margin:8px 0}
+  .loading{text-align:center; color:var(--sub); padding:40px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="dot"></span> Волонтёры Ticketon</h1>
+    <p>Запись на события и учёт инвентаря</p>
+  </header>
+  <div class="tabs">
+    <button class="tab active" id="tab-vol">Я волонтёр</button>
+    <button class="tab" id="tab-coord">Координатор</button>
+  </div>
+  <main id="app"><div class="loading">Загрузка…</div></main>
+</div>
+
+<script>
+const PIN_KEY = '__vh_pin';
+let state = { mode:'volunteer', events:[], signups:[], pin:sessionStorage.getItem(PIN_KEY)||null };
+
+const api = {
+  async events(){ const r = await fetch('/api/events'); return (await r.json()).events||[]; },
+  async signup(d){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
+  async listSignups(){ const r = await fetch('/api/signups',{headers:{'x-coord-pin':state.pin}}); if(r.status===401) return null; return (await r.json()).signups||[]; },
+  async patch(d){ return fetch('/api/signups',{method:'PATCH',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
+  async delSignup(id){ return fetch('/api/signups?id='+encodeURIComponent(id),{method:'DELETE',headers:{'x-coord-pin':state.pin}}); },
+  async addEvent(d){ return fetch('/api/events',{method:'POST',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
+  async delEvent(id){ return fetch('/api/events?id='+encodeURIComponent(id),{method:'DELETE',headers:{'x-coord-pin':state.pin}}); },
+  async sync(){ return fetch('/api/sync',{method:'POST',headers:{'x-coord-pin':state.pin}}); },
+};
+
+const el = document.getElementById('app');
+const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); const mo=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек']; return `${+d} ${mo[+m-1]} ${y}`; }
+
+document.getElementById('tab-vol').onclick = ()=>{ state.mode='volunteer'; setTabs(); render(); };
+document.getElementById('tab-coord').onclick = ()=>{ state.mode='coordinator'; setTabs(); render(); };
+function setTabs(){ document.getElementById('tab-vol').classList.toggle('active',state.mode==='volunteer'); document.getElementById('tab-coord').classList.toggle('active',state.mode==='coordinator'); }
+
+async function loadEvents(){ state.events = await api.events(); }
+
+// ---------- VOLUNTEER ----------
+let vol = { name:'', phone:'', eventId:'', done:false };
+function renderVolunteer(){
+  if(vol.done){
+    const ev = state.events.find(e=>e.id===vol.eventId);
+    el.innerHTML = `<div class="card center">
+      <div style="font-size:40px;margin-bottom:8px">✓</div>
+      <h2 style="margin:0 0 6px;font-size:19px">Заявка отправлена</h2>
+      <p class="muted">${esc(vol.name)}, ты записан(а) на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
+      <p class="muted">Координатор подтвердит участие и выдаст бейдж с манишкой на месте.</p>
+      <button class="btn ghost" id="again">Записать ещё одного</button>
+    </div>`;
+    document.getElementById('again').onclick=()=>{ vol={name:'',phone:'',eventId:'',done:false}; render(); };
+    return;
+  }
+  const evCards = state.events.map(e=>{
+    const taken = +e.taken||0, full = taken>=e.need, sel = vol.eventId===e.id;
+    return `<button class="ev ${sel?'sel':''}" data-id="${esc(e.id)}" ${full&&!sel?'disabled style="opacity:.55"':''}>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span class="t">${esc(e.title)}</span>
+        ${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">${taken}/${e.need}</span>`}
+      </div>
+      ${e.date?`<div class="d">${fmtDate(e.date)}</div>`:''}
+    </button>`;
+  }).join('');
+  el.innerHTML = `<p class="muted" style="margin:6px 4px 12px">Выбери событие:</p>
+    ${state.events.length?evCards:'<div class="card center muted">Событий пока нет.</div>'}
+    <div class="card">
+      <label><span>Имя и фамилия</span><input id="v-name" placeholder="Айгуль Асанова" value="${esc(vol.name)}"></label>
+      <label><span>Телефон</span><input id="v-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(vol.phone)}"></label>
+      <button class="btn" id="v-submit">Записаться</button>
+      <div class="err" id="v-err" style="display:none"></div>
+    </div>`;
+  document.querySelectorAll('.ev').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; render(); });
+  document.getElementById('v-name').oninput=e=>vol.name=e.target.value;
+  document.getElementById('v-phone').oninput=e=>vol.phone=e.target.value;
+  document.getElementById('v-submit').onclick=async()=>{
+    if(!vol.name.trim()||!vol.phone.trim()||!vol.eventId){ showErr('v-err','Выбери событие и заполни имя с телефоном'); return; }
+    const r = await api.signup({name:vol.name,phone:vol.phone,eventId:vol.eventId});
+    if(r.ok){ vol.done=true; await loadEvents(); render(); }
+    else showErr('v-err','Не получилось отправить. Попробуй ещё раз.');
+  };
+}
+function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
+
+// ---------- COORDINATOR ----------
+let coord = { tab:'people', filter:'all', err:'' };
+function renderCoordinator(){
+  if(!state.pin){ renderPin(); return; }
+  // загрузим заявки, если ещё не загружены в этой отрисовке — делаем асинхронно
+  el.innerHTML = `<div class="loading">Загрузка…</div>`;
+  api.listSignups().then(list=>{
+    if(list===null){ state.pin=null; sessionStorage.removeItem(PIN_KEY); renderPin('Неверный PIN'); return; }
+    state.signups = list;
+    drawCoordinator();
+  });
+}
+function renderPin(errMsg){
+  el.innerHTML = `<div class="card" style="max-width:320px;margin:8px auto">
+    <h2 style="margin:0 0 4px;font-size:18px">Вход для координатора</h2>
+    <p class="muted" style="margin:0 0 16px">Введите PIN-код.</p>
+    <label><span>PIN</span><input id="pin" type="password" inputmode="numeric" placeholder="••••"></label>
+    ${errMsg?`<div class="err">${esc(errMsg)}</div>`:''}
+    <button class="btn" id="pin-go">Войти</button>
+  </div>`;
+  const go=async()=>{ const v=document.getElementById('pin').value.trim(); state.pin=v; const list=await api.listSignups();
+    if(list===null){ state.pin=null; renderPin('Неверный PIN'); return; }
+    sessionStorage.setItem(PIN_KEY,v); state.signups=list; await loadEvents(); drawCoordinator(); };
+  document.getElementById('pin-go').onclick=go;
+  document.getElementById('pin').onkeydown=e=>{ if(e.key==='Enter') go(); };
+}
+function drawCoordinator(){
+  const s = state.signups;
+  const evTitle = id => { const e=state.events.find(x=>x.id===id); return e?e.title:'—'; };
+  const active = s.filter(x=>x.status!=='rejected');
+  const stats = `<div class="stats">
+    <div class="stat"><b>${active.length}</b><span>всего</span></div>
+    <div class="stat"><b style="color:var(--amber)">${s.filter(x=>x.status==='pending').length}</b><span>ждут</span></div>
+    <div class="stat"><b>${s.filter(x=>x.badge).length}</b><span>бейджей</span></div>
+    <div class="stat"><b>${s.filter(x=>x.vest).length}</b><span>манишек</span></div>
+  </div>`;
+  const subtabs = `<div class="row" style="margin-top:0;margin-bottom:12px">
+    <button class="tab ${coord.tab==='people'?'active':''}" id="ct-people">Волонтёры</button>
+    <button class="tab ${coord.tab==='events'?'active':''}" id="ct-events">События</button>
+    <button class="tab" id="ct-out" style="flex:0 0 auto;padding:11px 14px">Выйти</button>
+  </div>`;
+
+  if(coord.tab==='people'){
+    const visible = s.filter(x=> coord.filter==='all'? x.status!=='rejected' : x.status===coord.filter);
+    const cards = visible.map(x=>{
+      const pending = x.status==='pending';
+      return `<div class="card">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <div><div class="ev-name" style="font-weight:800;font-size:16px">${esc(x.name)}</div>
+            <div class="muted">${esc(x.phone)}</div>
+            <div class="muted" style="margin-top:2px">${esc(evTitle(x.event_id))}</div></div>
+          <span class="pill ${pending?'amber':'green'}">${pending?'Ждёт':'Подтверждён'}</span>
+        </div>
+        ${pending?`<div class="row">
+            <button class="btn small" data-act="approve" data-id="${x.id}">Подтвердить</button>
+            <button class="btn small danger" data-act="del" data-id="${x.id}">Удалить</button></div>`
+          :`<div class="row">
+            <button class="toggle ${x.badge?'on':''}" data-act="badge" data-id="${x.id}">${x.badge?'✓ ':''}Бейдж</button>
+            <button class="toggle ${x.vest?'on':''}" data-act="vest" data-id="${x.id}">${x.vest?'✓ ':''}Манишка</button></div>`}
+      </div>`;
+    }).join('');
+    el.innerHTML = stats + subtabs + `<div class="filters">
+      <button class="chip ${coord.filter==='all'?'active':''}" data-f="all">Все</button>
+      <button class="chip ${coord.filter==='pending'?'active':''}" data-f="pending">Ждут</button>
+      <button class="chip ${coord.filter==='approved'?'active':''}" data-f="approved">Подтверждены</button>
+    </div>` + (visible.length?cards:'<div class="card center muted">Здесь пусто. Заявки появятся, когда волонтёры запишутся.</div>');
+    document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ coord.filter=c.dataset.f; drawCoordinator(); });
+    document.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.id, act=b.dataset.act;
+      if(act==='approve') await api.patch({id,status:'approved'});
+      if(act==='del') await api.delSignup(id);
+      if(act==='badge'){ const cur=state.signups.find(x=>x.id===id); await api.patch({id,badge:!cur.badge}); }
+      if(act==='vest'){ const cur=state.signups.find(x=>x.id===id); await api.patch({id,vest:!cur.vest}); }
+      state.signups = await api.listSignups(); drawCoordinator();
+    });
+  } else {
+    const evs = state.events.map(e=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
+        <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div></div>
+      <button class="btn small danger" data-del="${esc(e.id)}">Удалить</button></div>`).join('');
+    el.innerHTML = stats + subtabs + `
+      <button class="btn ghost" id="sync" style="margin-bottom:12px">Загрузить события с Ticketon</button>
+      <div class="err" id="sync-msg" style="display:none"></div>
+      ${evs||'<div class="card center muted">Событий пока нет.</div>'}
+      <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Новое событие</h3>
+        <label><span>Название</span><input id="e-title" placeholder="Концерт, спектакль…"></label>
+        <label><span>Дата</span><input id="e-date" type="date"></label>
+        <label><span>Сколько волонтёров нужно</span><input id="e-need" type="number" inputmode="numeric" value="4"></label>
+        <button class="btn" id="e-add">Добавить событие</button>
+      </div>`;
+    document.getElementById('sync').onclick=async()=>{
+      const m=document.getElementById('sync-msg'); m.style.display='block'; m.style.color='var(--sub)'; m.textContent='Собираю события…';
+      const r=await api.sync(); const j=await r.json();
+      m.textContent = j.ok ? `Готово: добавлено ${j.added}, всего на афише ${j.total}.` : (j.note||'Не получилось.');
+      await loadEvents(); state.signups=await api.listSignups();
+      setTimeout(drawCoordinator,1200);
+    };
+    document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ await api.delEvent(b.dataset.del); await loadEvents(); drawCoordinator(); });
+    document.getElementById('e-add').onclick=async()=>{
+      const title=document.getElementById('e-title').value.trim();
+      const date=document.getElementById('e-date').value;
+      const need=+document.getElementById('e-need').value||4;
+      if(!title){ return; }
+      await api.addEvent({title,date:date||null,need}); await loadEvents(); drawCoordinator();
+    };
+  }
+  document.getElementById('ct-people').onclick=()=>{ coord.tab='people'; drawCoordinator(); };
+  document.getElementById('ct-events').onclick=()=>{ coord.tab='events'; drawCoordinator(); };
+  document.getElementById('ct-out').onclick=()=>{ state.pin=null; sessionStorage.removeItem(PIN_KEY); render(); };
+}
+
+function render(){ if(state.mode==='volunteer') renderVolunteer(); else renderCoordinator(); }
+
+(async function init(){ await loadEvents(); render(); })();
+</script>
+</body>
+</html>
