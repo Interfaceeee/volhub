@@ -9,8 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --green:#02B140; --green-dark:#164734; --green-soft:#E4F6E9;
-    --ink:#0E151C; --sub:#71757A; --line:#ECECEC; --bg:#F5F6F7; --card:#fff;
+    --green:#00B449; --green-dark:#164734; --green-soft:#E4F6E9;
+    --green-line:#CBECC6; --place-bg:#F3F4F5; --month:#BDC3CD;
+    --ink:#0E151C; --sub:#71757A; --line:#ECECEC; --bg:#F2F3F6; --card:#fff;
     --amber:#B7791F; --amber-soft:#FBEFD2; --red:#D03A2C;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
@@ -32,34 +33,37 @@
   main{padding:12px 16px 48px}
 
   /* calendar strip */
-  .cal{display:flex; gap:7px; overflow-x:auto; padding:6px 2px 12px; scrollbar-width:none}
+  .cal{display:flex; gap:10px; overflow-x:auto; padding:4px 2px 14px; scrollbar-width:none; align-items:center}
   .cal::-webkit-scrollbar{display:none}
-  .cal-day{flex:0 0 auto; width:48px; padding:9px 0; border-radius:13px; text-align:center;
-    background:var(--card); border:1.5px solid var(--line); cursor:pointer; transition:.12s}
-  .cal-day .dn{font-size:17px; font-weight:800; color:var(--ink)}
-  .cal-day .wd{font-size:10px; font-weight:600; color:var(--sub); margin-top:2px; text-transform:uppercase}
-  .cal-day.has{border-color:#CDEAC4}
-  .cal-day.has .dn{color:var(--green-dark)}
+  .cal-day{flex:0 0 auto; width:47px; height:51px; border-radius:16px; text-align:center;
+    background:var(--card); border:1.5px solid var(--green-line); cursor:pointer; transition:.12s;
+    display:flex; flex-direction:column; align-items:center; justify-content:center}
+  .cal-day .dn{font-size:18px; font-weight:800; color:var(--ink)}
+  .cal-day .wd{font-size:13px; font-weight:600; color:var(--sub); margin-top:1px}
   .cal-day.active{background:var(--green); border-color:var(--green)}
   .cal-day.active .dn,.cal-day.active .wd{color:#fff}
-  .cal-day.alldays{width:auto; padding:9px 14px; display:flex; align-items:center}
-  .cal-day.alldays .dn{font-size:13px; font-weight:700}
+  .cal-day.alldays{width:auto; padding:0 28px; height:51px; border:none; background:var(--green)}
+  .cal-day.alldays .dn{font-size:16px; font-weight:700; color:#fff}
+  .cal-day.alldays.active{background:var(--green)}
+  .cal-months{display:flex; gap:0; font-size:16px; font-weight:700; color:var(--month); margin:6px 2px 2px}
 
   /* event card */
   .ecard{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden;
     margin-bottom:0; cursor:pointer; transition:.12s; width:100%; text-align:left; font-family:inherit; padding:0; display:block}
   .ecard.sel{border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft)}
   .ecard.full{opacity:.5}
-  .ecard .img{aspect-ratio:5/7; background:linear-gradient(135deg,#02B140,#164734); position:relative;
-    display:flex; align-items:center; justify-content:center}
-  .ecard .img img{width:100%; height:100%; object-fit:cover}
+  .ecard .img{aspect-ratio:1/1.05; background:linear-gradient(135deg,var(--green),var(--green-dark)); position:relative;
+    display:flex; align-items:center; justify-content:center; border-bottom-right-radius:15px}
+  .ecard .img img{width:100%; height:100%; object-fit:cover; border-bottom-right-radius:15px}
   .ecard .img .ph{color:rgba(255,255,255,.4)}
-  .ecard .body{padding:11px 12px}
-  .ecard .ttl{font-size:14px; font-weight:800; color:var(--ink); line-height:1.25}
-  .ecard .meta-date{font-size:13px; margin-top:5px}
-  .ecard .meta-date b{font-weight:800; color:var(--ink)}
-  .ecard .meta-date span{color:var(--sub)}
-  .ecard .meta-place{font-size:12px; color:var(--sub); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .ecard .body{padding:8px 12px 14px}
+  .ecard .ttl{font-size:15px; font-weight:700; color:#000; line-height:1.2}
+  .ecard .meta-date{font-size:14px; margin-top:5px}
+  .ecard .meta-date b{font-weight:700; color:#000}
+  .ecard .meta-date span{color:#000; font-weight:400}
+  .ecard .meta-place{display:inline-block; max-width:100%; margin-top:10px; padding:8px 12px;
+    background:var(--place-bg); color:#000; font-size:10px; font-weight:700;
+    border-radius:14px 14px 14px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .ecard .foot{margin-top:8px}
   .egrid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
   .search-wrap{margin:4px 0 10px}
@@ -72,28 +76,32 @@
   /* event page */
   .back-btn{background:none; border:none; color:var(--sub); font-size:15px; font-weight:600;
     font-family:inherit; cursor:pointer; padding:4px 0 12px; display:block}
-  .evpage{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; margin-bottom:12px}
-  .evpage-img{aspect-ratio:5/7; max-height:420px; background:linear-gradient(135deg,#02B140,#164734); display:flex; align-items:center; justify-content:center}
+  .evpage{position:relative; margin:0 -16px 0; }
+  .evpage-img{aspect-ratio:1/1.25; max-height:560px; background:linear-gradient(135deg,var(--green),var(--green-dark)); display:flex; align-items:center; justify-content:center; position:relative}
   .evpage-img img{width:100%; height:100%; object-fit:cover}
   .evpage-img .ph{color:rgba(255,255,255,.4)}
-  .evpage-body{padding:18px 16px}
-  .evpage-ttl{margin:0 0 12px; font-size:22px; font-weight:800; line-height:1.2; color:var(--ink)}
-  .evpage-date{font-size:18px; margin-bottom:14px}
-  .evpage-date b{font-weight:800; color:var(--ink)}
-  .evpage-date span{color:var(--sub)}
+  .evpage-time{position:absolute; top:14px; right:16px; background:var(--card); color:var(--green);
+    border:1.5px solid var(--green); font-size:12px; font-weight:700; padding:9px 14px; border-radius:12px}
+  .evpage-sheet{position:relative; background:var(--card); border-radius:20px 20px 0 0; margin-top:-22px; padding:24px 16px 20px}
+  .evpage-ttl{margin:0 0 18px; font-size:28px; font-weight:800; line-height:1.15; color:#000}
+  .evpage-date{font-size:19px; margin-bottom:16px}
+  .evpage-date b{font-weight:700; color:#000}
+  .evpage-date span{color:#000; font-weight:400}
   .evpage-row{display:flex; justify-content:space-between; align-items:center; gap:10px;
-    padding:12px 0; border-top:1px solid var(--line)}
-  .evpage-label{font-size:13px; font-weight:700; color:var(--sub)}
-  .evpage-place{font-size:15px; font-weight:600; color:var(--ink); text-align:right}
-  .reg-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:90px}
+    padding:14px 0; border-top:1px solid #E4E6EA}
+  .evpage-label{font-size:14px; font-weight:700; color:var(--sub)}
+  .evpage-place{font-size:16px; font-weight:700; color:#000; text-align:right}
+  .reg-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin:0 -16px 90px; }
   .reg-ttl{margin:0 0 14px; font-size:16px; font-weight:800; color:var(--ink)}
   .sticky-bar{position:fixed; left:0; right:0; bottom:0; padding:12px 16px;
     background:var(--card); border-top:1px solid var(--line); z-index:20}
   .sticky-bar .btn{max-width:460px; margin:0 auto; display:block}
 
   .hello{font-size:15px; font-weight:700; color:var(--ink); margin:4px 2px 6px}
+  .page-title{font-size:35px; font-weight:700; color:#000; margin:8px 2px 10px; line-height:1.1}
   .vnav{position:fixed; left:0; right:0; bottom:0; display:flex; gap:4px; max-width:460px; margin:0 auto;
-    padding:8px 12px calc(8px + env(safe-area-inset-bottom)); background:var(--card); border-top:1px solid var(--line); z-index:15}
+    padding:14px 24px calc(14px + env(safe-area-inset-bottom)); background:var(--card);
+    border-radius:21px 21px 0 0; box-shadow:0 -4px 39px rgba(0,0,0,.12); z-index:15}
   .vnav-btn{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 0;
     border-radius:12px; font-size:11px; font-weight:700; font-family:inherit;
     border:none; background:none; color:var(--sub); cursor:pointer}
@@ -371,15 +379,30 @@ function renderLogin(){
 }
 
 // --- СПИСОК СОБЫТИЙ ---
+function eventCardHTML(e, signedIds){
+  const mine=signedIds.has(e.id);
+  return `<button class="ecard" data-id="${esc(e.id)}">
+    <div class="img">${eventImg(e)}</div>
+    <div class="body">
+      <div class="ttl">${esc(e.title)}</div>
+      ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
+      ${mine?'<span class="meta-place" style="background:var(--green-soft);color:var(--green-dark)">✓ Вы записаны</span>':(e.place?`<span class="meta-place">${esc(e.place)}</span>`:'')}
+    </div>
+  </button>`;
+}
 function renderList(){
   const dates = [...new Set(state.events.map(e=>e.date).filter(Boolean))].sort();
+  // подписи месяцев над лентой (по уникальным месяцам в датах)
+  let monthsHtml = '';
+  const months = [...new Set(dates.map(d=>+d.split('-')[1]))];
+  if(months.length){ monthsHtml = `<div class="cal-months">${months.map(m=>MOF[m-1][0].toUpperCase()+MOF[m-1].slice(1)).join('&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')}</div>`; }
   let calHtml = '';
   if(dates.length){
-    calHtml = `<div class="cal">
-      <div class="cal-day alldays ${vol.day==='all'?'active':''}" data-day="all"><span class="dn">Все дни</span></div>` +
+    calHtml = monthsHtml + `<div class="cal">
+      <div class="cal-day alldays ${vol.day==='all'?'active':''}" data-day="all"><span class="dn">Все</span></div>` +
       dates.map(d=>{
         const [y,m,day]=d.split('-'); const wd=WD[new Date(d).getDay()];
-        return `<div class="cal-day has ${vol.day===d?'active':''}" data-day="${d}">
+        return `<div class="cal-day ${vol.day===d?'active':''}" data-day="${d}">
           <div class="dn">${+day}</div><div class="wd">${wd}</div></div>`;
       }).join('') + `</div>`;
   }
@@ -387,34 +410,18 @@ function renderList(){
   let shown = state.events.filter(e=> vol.day==='all' || e.date===vol.day);
   if(q) shown = shown.filter(e=> (e.title||'').toLowerCase().includes(q) || (e.place||'').toLowerCase().includes(q));
   const signedIds = new Set(vol.mySignups.map(s=>s.event_id));
-  const evCards = shown.map(e=>{
-    const taken=+e.taken||0, full=taken>=e.need, mine=signedIds.has(e.id);
-    return `<button class="ecard" data-id="${esc(e.id)}">
-      <div class="img">${eventImg(e)}</div>
-      <div class="body">
-        <div class="ttl">${esc(e.title)}</div>
-        ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
-        ${e.place?`<div class="meta-place">${esc(e.place)}</div>`:''}
-        <div class="foot">
-          ${mine?'<span class="pill green">✓ Вы записаны</span>':(full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">${taken}/${e.need}</span>`)}
-        </div>
-      </div>
-    </button>`;
-  }).join('');
+  const evCards = shown.map(e=>eventCardHTML(e, signedIds)).join('');
 
-  el.innerHTML = `<div class="hello">Привет, ${esc(me.name.split(' ')[0])}!</div>` + calHtml +
+  el.innerHTML = `<h1 class="page-title">Все события</h1>` + calHtml +
     `<div class="search-wrap"><input id="ev-search" class="search" placeholder="Поиск события…" value="${esc(vol.q)}"></div>
-    <div class="section-label">Выбери событие:</div>
     <div class="egrid">${shown.length?evCards:'<div class="card center muted" style="grid-column:1/-1">Ничего не найдено.</div>'}</div>` + volNav();
 
   const si=document.getElementById('ev-search');
-  if(si) si.oninput=e=>{ vol.q=e.target.value; const grid=document.querySelector('.egrid'); 
+  if(si) si.oninput=e=>{ vol.q=e.target.value; const grid=document.querySelector('.egrid');
     const qq=(vol.q||'').trim().toLowerCase();
     let f=state.events.filter(x=> vol.day==='all'||x.date===vol.day);
     if(qq) f=f.filter(x=>(x.title||'').toLowerCase().includes(qq)||(x.place||'').toLowerCase().includes(qq));
-    grid.innerHTML = f.length? f.map(ev=>{const taken=+ev.taken||0,full=taken>=ev.need,mine=signedIds.has(ev.id);
-      return `<button class="ecard" data-id="${esc(ev.id)}"><div class="img">${eventImg(ev)}</div><div class="body"><div class="ttl">${esc(ev.title)}</div>${ev.date?`<div class="meta-date"><b>${fmtDateFull(ev.date)}</b><span>, ${weekday(ev.date)}</span></div>`:''}${ev.place?`<div class="meta-place">${esc(ev.place)}</div>`:''}<div class="foot">${mine?'<span class="pill green">✓ Вы записаны</span>':(full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">${taken}/${ev.need}</span>`)}</div></div></button>`;
-    }).join('') : '<div class="card center muted" style="grid-column:1/-1">Ничего не найдено.</div>';
+    grid.innerHTML = f.length? f.map(ev=>eventCardHTML(ev, signedIds)).join('') : '<div class="card center muted" style="grid-column:1/-1">Ничего не найдено.</div>';
     grid.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
   };
   document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
@@ -433,7 +440,7 @@ function renderEventPage(){
     <button class="back-btn" id="back">‹ Назад к событиям</button>
     <div class="evpage">
       <div class="evpage-img">${eventImg(e)}</div>
-      <div class="evpage-body">
+      <div class="evpage-sheet">
         <h1 class="evpage-ttl">${esc(e.title)}</h1>
         ${e.date?`<div class="evpage-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
         ${e.place?`<div class="evpage-row"><span class="evpage-label">Место</span><div class="evpage-place">${esc(e.place)}</div></div>`:''}
