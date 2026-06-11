@@ -62,7 +62,7 @@ export async function ensureSchema() {
   // ticket scanner login/pass fields per event (set by coordinator)
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_login TEXT`;
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_pass TEXT`;
-  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS time TEXT`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS event_time TEXT`;
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS image TEXT`;
   ready = true;
 }
