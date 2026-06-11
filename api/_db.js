@@ -4,7 +4,7 @@
 
 import { neon } from '@neondatabase/serverless';
 
-const sql = neon(process.env.DATABASE_URL);
+const sql = neon(process.env.DATABASE_URL || process.env.POSTGRES_URL);
 
 // Создаёт таблицы при первом обращении (безопасно вызывать всегда).
 let ready = false;
