@@ -147,7 +147,7 @@ function renderVolunteer(){
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
 
 // ---------- COORDINATOR ----------
-let coord = { tab:'people', filter:'all', err:'' };
+let coord = { tab:'people', filter:'all', err:'', editing:null };
 function renderCoordinator(){
   if(!state.pin){ renderPin(); return; }
   // загрузим заявки, если ещё не загружены в этой отрисовке — делаем асинхронно
@@ -222,10 +222,27 @@ function drawCoordinator(){
       state.signups = await api.listSignups(); drawCoordinator();
     });
   } else {
-    const evs = state.events.map(e=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center">
+    const evs = state.events.map(e=>{
+      if (coord.editing === e.id) {
+        return `<div class="card">
+          <label><span>Название</span><input id="ed-title" value="${esc(e.title)}"></label>
+          <label><span>Дата</span><input id="ed-date" type="date" value="${esc(e.date||'')}"></label>
+          <label><span>Место</span><input id="ed-place" value="${esc(e.place||'')}" placeholder="Адрес или площадка"></label>
+          <label><span>Сколько волонтёров нужно</span><input id="ed-need" type="number" inputmode="numeric" value="${e.need}"></label>
+          <div class="row">
+            <button class="btn small" data-save="${esc(e.id)}">Сохранить</button>
+            <button class="btn small ghost" data-cancel="1">Отмена</button>
+          </div>
+        </div>`;
+      }
+      return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
         <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div></div>
-      <button class="btn small danger" data-del="${esc(e.id)}">Удалить</button></div>`).join('');
+      <div style="display:flex;gap:6px;flex:0 0 auto">
+        <button class="btn small ghost" data-edit="${esc(e.id)}">Изменить</button>
+        <button class="btn small danger" data-del="${esc(e.id)}">Удалить</button>
+      </div></div>`;
+    }).join('');
     el.innerHTML = stats + subtabs + `
       <button class="btn ghost" id="sync" style="margin-bottom:12px">Загрузить события с Ticketon</button>
       <div class="err" id="sync-msg" style="display:none"></div>
@@ -244,6 +261,18 @@ function drawCoordinator(){
       setTimeout(drawCoordinator,1200);
     };
     document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ await api.delEvent(b.dataset.del); await loadEvents(); drawCoordinator(); });
+    document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ coord.editing=b.dataset.edit; drawCoordinator(); });
+    document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>{ coord.editing=null; drawCoordinator(); });
+    document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.save;
+      const title=document.getElementById('ed-title').value.trim();
+      const date=document.getElementById('ed-date').value;
+      const place=document.getElementById('ed-place').value.trim();
+      const need=+document.getElementById('ed-need').value||4;
+      if(!title){ return; }
+      await api.addEvent({id,title,date:date||null,place:place||null,need});
+      coord.editing=null; await loadEvents(); drawCoordinator();
+    });
     document.getElementById('e-add').onclick=async()=>{
       const title=document.getElementById('e-title').value.trim();
       const date=document.getElementById('e-date').value;
