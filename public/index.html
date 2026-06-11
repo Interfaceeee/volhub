@@ -56,7 +56,10 @@
   .ecard .img .ph{color:rgba(255,255,255,.35)}
   .ecard .body{padding:13px 14px}
   .ecard .ttl{font-size:16px; font-weight:800; color:var(--ink); line-height:1.25}
-  .ecard .meta{font-size:13px; color:var(--sub); margin-top:5px; display:flex; align-items:center; gap:5px}
+  .ecard .meta-date{font-size:15px; margin-top:6px}
+  .ecard .meta-date b{font-weight:800; color:var(--ink)}
+  .ecard .meta-date span{color:var(--sub)}
+  .ecard .meta-place{font-size:13px; color:var(--sub); margin-top:3px}
   .ecard .foot{display:flex; align-items:center; justify-content:space-between; margin-top:10px}
 
   /* generic card / forms */
@@ -136,8 +139,12 @@ const api = {
 const el = document.getElementById('app');
 const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const MO=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const MOF=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 const WD=['вс','пн','вт','ср','чт','пт','сб'];
+const WDF=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
 function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MO[+m-1]} ${y}`; }
+function fmtDateFull(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MOF[+m-1]}`; }
+function weekday(iso){ if(!iso) return ''; return WDF[new Date(iso).getDay()]; }
 
 document.getElementById('tab-vol').onclick = ()=>{ state.mode='volunteer'; setTabs(); render(); };
 document.getElementById('tab-coord').onclick = ()=>{ state.mode='coordinator'; setTabs(); render(); };
@@ -188,8 +195,8 @@ function renderVolunteer(){
       <div class="img">${eventImg(e)}</div>
       <div class="body">
         <div class="ttl">${esc(e.title)}</div>
-        ${e.date?`<div class="meta">📅 ${fmtDate(e.date)}</div>`:''}
-        ${e.place?`<div class="meta">📍 ${esc(e.place)}</div>`:''}
+        ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
+        ${e.place?`<div class="meta-place">${esc(e.place)}</div>`:''}
         <div class="foot">
           ${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Нужно волонтёров: ${taken}/${e.need}</span>`}
           ${sel?'<span class="pill green">✓ Выбрано</span>':''}
@@ -209,7 +216,7 @@ function renderVolunteer(){
     </div>`;
 
   document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
-  document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; render(); });
+  document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId = (vol.eventId===b.dataset.id ? '' : b.dataset.id); render(); });
   const n=document.getElementById('v-name'), p=document.getElementById('v-phone');
   if(n) n.oninput=e=>vol.name=e.target.value;
   if(p) p.oninput=e=>vol.phone=e.target.value;
