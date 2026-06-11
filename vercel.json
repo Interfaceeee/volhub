@@ -1,5 +1,4 @@
 {
-  "$comment": "Auto-collect cron is disabled: ticketon.kg blocks server requests (403). Enable schedule here when the JSON API is ready. Example: crons: [{ path: /api/sync, schedule: 0 6 * * * }]",
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
