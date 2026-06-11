@@ -109,3 +109,8 @@ export async function readBody(req) {
 export function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
+
+// 8-значный числовой код события (10000000–99999999)
+export function eventId() {
+  return String(Math.floor(10000000 + Math.random() * 90000000));
+}
