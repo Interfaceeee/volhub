@@ -52,7 +52,7 @@
     margin-bottom:0; cursor:pointer; transition:.12s; width:100%; text-align:left; font-family:inherit; padding:0; display:block}
   .ecard.sel{border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft)}
   .ecard.full{opacity:.5}
-  .ecard .img{aspect-ratio:1/1.05; background:linear-gradient(135deg,var(--green),var(--green-dark)); position:relative;
+  .ecard .img{aspect-ratio:5/7; background:linear-gradient(135deg,var(--green),var(--green-dark)); position:relative;
     display:flex; align-items:center; justify-content:center; border-bottom-right-radius:15px}
   .ecard .img img{width:100%; height:100%; object-fit:cover; border-bottom-right-radius:15px}
   .ecard .img .ph{color:rgba(255,255,255,.4)}
@@ -82,7 +82,9 @@
   .evpage-img .ph{color:rgba(255,255,255,.4)}
   .evpage-time{position:absolute; top:14px; right:16px; background:var(--card); color:var(--green);
     border:1.5px solid var(--green); font-size:12px; font-weight:700; padding:9px 14px; border-radius:12px}
-  .evpage-sheet{position:relative; background:var(--card); border-radius:20px 20px 0 0; margin-top:-22px; padding:24px 16px 20px}
+  .evpage-sheet{position:relative; background:var(--card); border-radius:20px 20px 0 0; margin-top:-22px; padding:24px 16px 110px}
+  .evpage-block{border-top:1px solid #E4E6EA; padding:16px 0 0; margin-top:6px}
+  .evpage-block-ttl{font-size:16px; font-weight:800; color:var(--ink)}
   .evpage-ttl{margin:0 0 18px; font-size:28px; font-weight:800; line-height:1.15; color:#000}
   .evpage-date{font-size:19px; margin-bottom:16px}
   .evpage-date b{font-weight:700; color:#000}
@@ -447,15 +449,18 @@ function renderEventPage(){
         <div class="evpage-row"><span class="evpage-label">Волонтёры</span>
           <div>${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Записано ${taken} из ${e.need}</span>`}</div>
         </div>
+        ${already
+          ? `<div class="evpage-block">
+              <div class="evpage-block-ttl">Вы уже записаны на это событие</div>
+              <div class="muted" style="margin-top:4px">Статус: <b style="color:var(--ink)">${already.status==='approved'?'подтверждён':'ждёт подтверждения'}</b></div>
+            </div>`
+          : `<div class="evpage-block">
+              <div class="evpage-block-ttl">Записаться волонтёром</div>
+              <div class="muted" style="margin-top:4px">Запишем как <b style="color:var(--ink)">${esc(me.name)}</b> (${esc(me.phone)})</div>
+              <div class="err" id="v-err" style="display:none;margin-top:10px"></div>
+            </div>`}
       </div>
     </div>
-    ${already
-      ? `<div class="card center"><p class="muted" style="margin:6px 0">Вы уже записаны на это событие. Статус: <b style="color:var(--ink)">${already.status==='approved'?'подтверждён':'ждёт подтверждения'}</b>.</p></div>`
-      : `<div class="reg-card">
-          <h3 class="reg-ttl">Записаться волонтёром</h3>
-          <p class="muted" style="margin:-6px 0 0">Запишем как <b style="color:var(--ink)">${esc(me.name)}</b> (${esc(me.phone)})</p>
-          <div class="err" id="v-err" style="display:none;margin-top:10px"></div>
-        </div>`}
     ${already?'':`<div class="sticky-bar">
       <button class="btn" id="v-submit" ${full?'disabled':''}>${full?'Мест больше нет':'Записаться'}</button>
     </div>`}`;
