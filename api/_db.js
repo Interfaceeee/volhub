@@ -1,6 +1,6 @@
-// Общий модуль для работы с базой Neon (Postgres).
-// Берёт строку подключения из любой из стандартных переменных,
-// которые создаёт интеграция Neon на Vercel.
+// Shared module for the Neon (Postgres) database.
+// Reads the connection string from any of the standard env vars
+// created by the Neon integration on Vercel.
 
 import { neon } from '@neondatabase/serverless';
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
@@ -13,7 +13,7 @@ const CONN =
 
 const sql = neon(CONN);
 
-// Создаёт таблицы при первом обращении (безопасно вызывать всегда).
+// Creates tables on first call (safe to call every time).
 let ready = false;
 export async function ensureSchema() {
   if (ready) return;
@@ -38,7 +38,7 @@ export async function ensureSchema() {
       vest        BOOLEAN DEFAULT false,
       created_at  TIMESTAMPTZ DEFAULT now()
     )`;
-  // профили волонтёров: телефон — логин, плюс пароль (хэш)
+  // volunteer profiles: phone is the login, plus password hash
   await sql`
     CREATE TABLE IF NOT EXISTS volunteers (
       phone       TEXT PRIMARY KEY,
@@ -48,10 +48,10 @@ export async function ensureSchema() {
       created_at  TIMESTAMPTZ DEFAULT now()
     )`;
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS pass_hash TEXT`;
-  // Telegram: chat_id для отправки уведомлений и временный код привязки
+  // Telegram: chat_id for notifications and a temporary linking code
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_chat_id TEXT`;
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_code TEXT`;
-  // именованные учётки координаторов (логин + хэш пароля)
+  // named coordinator accounts (login + password hash)
   await sql`
     CREATE TABLE IF NOT EXISTS coordinators (
       login       TEXT PRIMARY KEY,
@@ -59,7 +59,7 @@ export async function ensureSchema() {
       pass_hash   TEXT NOT NULL,
       created_at  TIMESTAMPTZ DEFAULT now()
     )`;
-  // поля логина/пароля сканера билетов на событии (вводит координатор)
+  // ticket scanner login/pass fields per event (set by coordinator)
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_login TEXT`;
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_pass TEXT`;
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS time TEXT`;
@@ -69,7 +69,7 @@ export async function ensureSchema() {
 
 export { sql };
 
-// Хэш пароля: scrypt с солью. Формат "соль:хэш" (hex).
+// Password hash: scrypt with salt. Format "salt:hash" (hex).
 export function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(String(password), salt, 64).toString('hex');
@@ -83,15 +83,15 @@ export function verifyPassword(password, stored) {
   catch { return false; }
 }
 
-// Старый общий PIN — остаётся как "мастер-вход" для первого координатора.
+// Legacy shared PIN - kept as master login for the first coordinator.
 export function checkPin(req) {
   const pin = process.env.COORD_PIN || '1234';
   const given = req.headers['x-coord-pin'];
   return given && given === pin;
 }
 
-// Полная проверка прав координатора: либо мастер-PIN, либо валидная учётка.
-// Заголовки: x-coord-pin (мастер) ИЛИ x-coord-login + x-coord-pass.
+// Full coordinator auth: master PIN or a valid account.
+// Headers: x-coord-pin (master) OR x-coord-login + x-coord-pass.
 export async function checkCoordinator(req) {
   if (checkPin(req)) return { ok: true, login: 'master' };
   const login = req.headers['x-coord-login'];
@@ -103,7 +103,7 @@ export async function checkCoordinator(req) {
   return { ok: true, login };
 }
 
-// Помогает читать JSON-тело запроса в serverless-функции.
+// Reads the JSON request body in a serverless function.
 export async function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
   let raw = '';
@@ -115,12 +115,12 @@ export function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// 8-значный числовой код события (10000000–99999999)
+// 8-digit numeric event code (10000000-99999999)
 export function eventId() {
   return String(Math.floor(10000000 + Math.random() * 90000000));
 }
 
-// Отправка сообщения в Telegram через Bot API. Токен — в переменной TELEGRAM_BOT_TOKEN.
+// Send a Telegram message via Bot API. Token in TELEGRAM_BOT_TOKEN env var.
 export async function tgSend(chatId, text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !chatId) return false;
