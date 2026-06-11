@@ -60,6 +60,28 @@
   .ecard .meta-date b{font-weight:800; color:var(--ink)}
   .ecard .meta-date span{color:var(--sub)}
   .ecard .meta-place{font-size:13px; color:var(--sub); margin-top:3px}
+
+  /* event page */
+  .back-btn{background:none; border:none; color:var(--sub); font-size:15px; font-weight:600;
+    font-family:inherit; cursor:pointer; padding:4px 0 12px; display:block}
+  .evpage{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; margin-bottom:12px}
+  .evpage-img{height:190px; background:linear-gradient(135deg,#02B140,#164734); display:flex; align-items:center; justify-content:center}
+  .evpage-img img{width:100%; height:100%; object-fit:cover}
+  .evpage-img .ph{color:rgba(255,255,255,.4)}
+  .evpage-body{padding:18px 16px}
+  .evpage-ttl{margin:0 0 12px; font-size:22px; font-weight:800; line-height:1.2; color:var(--ink)}
+  .evpage-date{font-size:18px; margin-bottom:14px}
+  .evpage-date b{font-weight:800; color:var(--ink)}
+  .evpage-date span{color:var(--sub)}
+  .evpage-row{display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:12px 0; border-top:1px solid var(--line)}
+  .evpage-label{font-size:13px; font-weight:700; color:var(--sub)}
+  .evpage-place{font-size:15px; font-weight:600; color:var(--ink); text-align:right}
+  .reg-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:90px}
+  .reg-ttl{margin:0 0 14px; font-size:16px; font-weight:800; color:var(--ink)}
+  .sticky-bar{position:fixed; left:0; right:0; bottom:0; padding:12px 16px;
+    background:var(--card); border-top:1px solid var(--line); z-index:20}
+  .sticky-bar .btn{max-width:460px; margin:0 auto; display:block}
   .ecard .foot{display:flex; align-items:center; justify-content:space-between; margin-top:10px}
 
   /* generic card / forms */
@@ -159,23 +181,17 @@ function eventImg(e){
 }
 
 // ---------- VOLUNTEER ----------
-let vol = { name:'', phone:'', eventId:'', done:false, day:'all' };
+// view: 'list' (список событий) | 'event' (страница события) | 'done' (успех)
+let vol = { name:'', phone:'', eventId:'', view:'list', day:'all' };
 
 function renderVolunteer(){
-  if(vol.done){
-    const ev = state.events.find(e=>e.id===vol.eventId);
-    el.innerHTML = `<div class="card center">
-      <div style="font-size:44px;margin-bottom:6px">🎉</div>
-      <h2 style="margin:0 0 6px;font-size:19px">Заявка отправлена</h2>
-      <p class="muted">${esc(vol.name)}, ты записан(а) на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
-      <p class="muted">Координатор подтвердит участие и выдаст бейдж с манишкой на месте.</p>
-      <button class="btn ghost" id="again" style="margin-top:6px">Записать ещё одного</button>
-    </div>`;
-    document.getElementById('again').onclick=()=>{ vol={name:'',phone:'',eventId:'',done:false,day:'all'}; render(); };
-    return;
-  }
+  if(vol.view==='done'){ renderDone(); return; }
+  if(vol.view==='event'){ renderEventPage(); return; }
+  renderList();
+}
 
-  // календарь: собираем уникальные даты событий
+// --- СПИСОК СОБЫТИЙ ---
+function renderList(){
   const dates = [...new Set(state.events.map(e=>e.date).filter(Boolean))].sort();
   let calHtml = '';
   if(dates.length){
@@ -187,11 +203,10 @@ function renderVolunteer(){
           <div class="dn">${+day}</div><div class="wd">${wd}</div></div>`;
       }).join('') + `</div>`;
   }
-
   const shown = state.events.filter(e=> vol.day==='all' || e.date===vol.day);
   const evCards = shown.map(e=>{
-    const taken=+e.taken||0, full=taken>=e.need, sel=vol.eventId===e.id;
-    return `<button class="ecard ${sel?'sel':''} ${full&&!sel?'full':''}" data-id="${esc(e.id)}" ${full&&!sel?'disabled':''}>
+    const taken=+e.taken||0, full=taken>=e.need;
+    return `<button class="ecard" data-id="${esc(e.id)}">
       <div class="img">${eventImg(e)}</div>
       <div class="body">
         <div class="ttl">${esc(e.title)}</div>
@@ -199,7 +214,6 @@ function renderVolunteer(){
         ${e.place?`<div class="meta-place">${esc(e.place)}</div>`:''}
         <div class="foot">
           ${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Нужно волонтёров: ${taken}/${e.need}</span>`}
-          ${sel?'<span class="pill green">✓ Выбрано</span>':''}
         </div>
       </div>
     </button>`;
@@ -207,26 +221,65 @@ function renderVolunteer(){
 
   el.innerHTML = calHtml +
     `<div class="section-label">Выбери событие:</div>
-    ${shown.length?evCards:'<div class="card center muted">На этот день событий нет.</div>'}
-    <div class="card">
-      <label><span>Имя и фамилия</span><input id="v-name" placeholder="Айгуль Асанова" value="${esc(vol.name)}"></label>
-      <label><span>Телефон</span><input id="v-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(vol.phone)}"></label>
-      <button class="btn" id="v-submit">Записаться</button>
-      <div class="err" id="v-err" style="display:none"></div>
-    </div>`;
+    ${shown.length?evCards:'<div class="card center muted">На этот день событий нет.</div>'}`;
 
   document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
-  document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId = (vol.eventId===b.dataset.id ? '' : b.dataset.id); render(); });
-  const n=document.getElementById('v-name'), p=document.getElementById('v-phone');
-  if(n) n.oninput=e=>vol.name=e.target.value;
-  if(p) p.oninput=e=>vol.phone=e.target.value;
-  const sub=document.getElementById('v-submit');
-  if(sub) sub.onclick=async()=>{
-    if(!vol.name.trim()||!vol.phone.trim()||!vol.eventId){ showErr('v-err','Выбери событие и заполни имя с телефоном'); return; }
+  document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
+}
+
+// --- СТРАНИЦА СОБЫТИЯ ---
+function renderEventPage(){
+  const e = state.events.find(x=>x.id===vol.eventId);
+  if(!e){ vol.view='list'; renderList(); return; }
+  const taken=+e.taken||0, full=taken>=e.need;
+
+  el.innerHTML = `
+    <button class="back-btn" id="back">‹ Назад к событиям</button>
+    <div class="evpage">
+      <div class="evpage-img">${eventImg(e)}</div>
+      <div class="evpage-body">
+        <h1 class="evpage-ttl">${esc(e.title)}</h1>
+        ${e.date?`<div class="evpage-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
+        ${e.place?`<div class="evpage-row"><span class="evpage-label">Место</span><div class="evpage-place">${esc(e.place)}</div></div>`:''}
+        <div class="evpage-row"><span class="evpage-label">Волонтёры</span>
+          <div>${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Записано ${taken} из ${e.need}</span>`}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reg-card">
+      <h3 class="reg-ttl">Записаться волонтёром</h3>
+      <label><span>Имя и фамилия</span><input id="v-name" placeholder="Айгуль Асанова" value="${esc(vol.name)}"></label>
+      <label><span>Телефон</span><input id="v-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(vol.phone)}"></label>
+      <div class="err" id="v-err" style="display:none"></div>
+    </div>
+
+    <div class="sticky-bar">
+      <button class="btn" id="v-submit" ${full?'disabled':''}>${full?'Мест больше нет':'Записаться'}</button>
+    </div>`;
+
+  document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
+  document.getElementById('v-name').oninput=ev=>vol.name=ev.target.value;
+  document.getElementById('v-phone').oninput=ev=>vol.phone=ev.target.value;
+  document.getElementById('v-submit').onclick=async()=>{
+    if(!vol.name.trim()||!vol.phone.trim()){ showErr('v-err','Заполни имя и телефон'); return; }
     const r = await api.signup({name:vol.name,phone:vol.phone,eventId:vol.eventId});
-    if(r.ok){ vol.done=true; await loadEvents(); render(); }
+    if(r.ok){ vol.view='done'; await loadEvents(); render(); }
     else showErr('v-err','Не получилось отправить. Попробуй ещё раз.');
   };
+}
+
+// --- УСПЕХ ---
+function renderDone(){
+  const ev = state.events.find(e=>e.id===vol.eventId);
+  el.innerHTML = `<div class="card center" style="margin-top:20px">
+    <div style="font-size:44px;margin-bottom:6px">🎉</div>
+    <h2 style="margin:0 0 6px;font-size:19px">Заявка отправлена</h2>
+    <p class="muted">${esc(vol.name)}, ты записан(а) на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
+    <p class="muted">Координатор подтвердит участие и выдаст бейдж с манишкой на месте.</p>
+    <button class="btn" id="again" style="margin-top:8px">К списку событий</button>
+  </div>`;
+  document.getElementById('again').onclick=()=>{ vol={name:'',phone:'',eventId:'',view:'list',day:'all'}; render(); };
 }
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
 
