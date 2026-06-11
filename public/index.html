@@ -253,6 +253,7 @@ const api = {
   // волонтёры
   async vReg(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'register'},d))}); },
   async vLogin(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'login'},d))}); },
+  async tgLink(){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'tglink',phone:me.phone,password:volPass})}); },
   async listVolunteers(){ const r=await fetch('/api/volunteers',{headers:chdr()}); if(r.status!==200) return []; return (await r.json()).volunteers||[]; },
   async volProfile(phone){ const r=await fetch('/api/volunteers?phone='+encodeURIComponent(phone),{headers:chdr()}); if(r.status!==200) return null; return r.json(); },
   async patchVolunteer(d){ return fetch('/api/volunteers',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
@@ -538,10 +539,25 @@ function renderProfile(){
       ${me.birthday?`<div class="muted" style="margin-top:2px">День рождения: ${fmtDateFull(me.birthday)}</div>`:''}
       <button class="btn ghost small" id="logout" style="margin-top:12px">Выйти</button>
     </div>
+    <div class="card">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px">🔔 Уведомления в Telegram</div>
+      ${me.tg_linked
+        ? '<div class="muted" style="font-size:13px">Telegram привязан ✓ Подтверждение записи и доступ к сканеру придут в бота.</div>'
+        : '<div class="muted" style="font-size:13px;margin-bottom:10px">Привяжи Telegram, чтобы получать подтверждение записи и доступ к сканеру прямо в мессенджере.</div><button class="btn small" id="tg-link">Привязать Telegram</button>'}
+      <div class="err" id="tg-err" style="display:none;margin-top:8px"></div>
+    </div>
     <div class="section-label">Мои записи:</div>
     ${vol.mySignups.length?cards:'<div class="card center muted">Вы ещё никуда не записались.</div>'}` + volNav();
 
   document.getElementById('logout').onclick=()=>{ me=null; volPass=null; localStorage.removeItem(VOL_KEY); vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
+  const tg=document.getElementById('tg-link');
+  if(tg) tg.onclick=async()=>{
+    tg.disabled=true; tg.textContent='Подождите…';
+    const r=await api.tgLink(); const d=await r.json();
+    if(r.ok && d.link){ window.open(d.link,'_blank'); tg.textContent='Открыть бота'; tg.disabled=false; tg.onclick=()=>window.open(d.link,'_blank'); }
+    else if(r.ok && d.code){ showErr('tg-err','Найди бота в Telegram и отправь: /start '+d.code); tg.disabled=false; tg.textContent='Привязать Telegram'; }
+    else { showErr('tg-err','Не получилось. Попробуй позже.'); tg.disabled=false; tg.textContent='Привязать Telegram'; }
+  };
   document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{
     if(b.disabled) return;
     if(!confirm('Отменить запись на это событие?')) return;
