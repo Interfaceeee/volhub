@@ -2,14 +2,14 @@
 //   GET    — список событий (для всех)
 //   POST   — добавить событие (нужен PIN координатора)
 //   DELETE — удалить событие по ?id= (нужен PIN)
-import { sql, ensureSchema, checkPin, readBody, uid } from './_db.js';
+import { sql, ensureSchema, checkCoordinator, readBody, uid } from './_db.js';
 
 export default async function handler(req, res) {
   await ensureSchema();
 
   if (req.method === 'GET') {
-    // Координатор (с PIN) получает полные данные, включая логин/пароль сканера.
-    if (checkPin(req)) {
+    // Координатор (с входом) получает полные данные, включая логин/пароль сканера.
+    if ((await checkCoordinator(req)).ok) {
       const events = await sql`
         SELECT e.*,
           (SELECT COUNT(*) FROM signups s
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    if (!checkPin(req)) return res.status(401).json({ error: 'Нужен PIN координатора' });
+    if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Нужен вход координатора' });
     const b = await readBody(req);
     if (!b.title) return res.status(400).json({ error: 'Нужно название' });
     const id = b.id || uid();
@@ -46,7 +46,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    if (!checkPin(req)) return res.status(401).json({ error: 'Нужен PIN координатора' });
+    if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Нужен вход координатора' });
     const id = req.query.id;
     if (!id) return res.status(400).json({ error: 'Нужен id' });
     await sql`DELETE FROM signups WHERE event_id = ${id}`;
