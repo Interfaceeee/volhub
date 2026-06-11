@@ -68,6 +68,18 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const auth = await checkCoordinator(req);
     if (!auth.ok) return res.status(401).json({ error: 'Только для координатора' });
+    // если передан ?phone= — отдаём полный профиль одного волонтёра с историей и инвентарём
+    const onePhone = (req.query.phone || '').trim();
+    if (onePhone) {
+      const prof = await sql`SELECT phone, name, birthday FROM volunteers WHERE phone = ${onePhone}`;
+      if (!prof.length) return res.status(404).json({ error: 'Профиль не найден' });
+      const rows = await sql`
+        SELECT s.id, s.status, s.badge, s.vest, s.event_id, e.title, e.date, e.place
+        FROM signups s JOIN events e ON e.id = s.event_id
+        WHERE s.phone = ${onePhone}
+        ORDER BY e.date NULLS LAST`;
+      return res.status(200).json({ profile: prof[0], signups: rows });
+    }
     const vols = await sql`SELECT phone, name, birthday FROM volunteers ORDER BY name`;
     return res.status(200).json({ volunteers: vols });
   }
@@ -90,6 +102,16 @@ export default async function handler(req, res) {
     if (b.newPassword) {
       await sql`UPDATE volunteers SET pass_hash = ${hashPassword(b.newPassword)} WHERE phone = ${phone}`;
     }
+    return res.status(200).json({ ok: true });
+  }
+
+  if (req.method === 'DELETE') {
+    const auth = await checkCoordinator(req);
+    if (!auth.ok) return res.status(401).json({ error: 'Только для координатора' });
+    const phone = normPhone(req.query.phone);
+    if (!phone) return res.status(400).json({ error: 'Нужен телефон' });
+    await sql`DELETE FROM signups WHERE phone = ${phone}`;
+    await sql`DELETE FROM volunteers WHERE phone = ${phone}`;
     return res.status(200).json({ ok: true });
   }
 
