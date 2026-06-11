@@ -3,6 +3,7 @@
 // которые создаёт интеграция Neon на Vercel.
 
 import { neon } from '@neondatabase/serverless';
+import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 
 const CONN =
   process.env.DATABASE_URL ||
@@ -62,8 +63,6 @@ export async function ensureSchema() {
 }
 
 export { sql };
-
-import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 
 // Хэш пароля: scrypt с солью. Формат "соль:хэш" (hex).
 export function hashPassword(password) {
