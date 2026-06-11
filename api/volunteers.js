@@ -71,7 +71,7 @@ export default async function handler(req, res) {
       if (!rows.length || !verifyPassword(password, rows[0].pass_hash)) return res.status(401).json({ error: 'Неверный пароль' });
       const code = 'v' + Math.random().toString(36).slice(2, 9);
       await sql`UPDATE volunteers SET tg_code = ${code} WHERE phone = ${phone}`;
-      const bot = process.env.TELEGRAM_BOT_USERNAME || '';
+      const bot = (process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '');
       return res.status(200).json({ ok: true, code, bot, link: bot ? `https://t.me/${bot}?start=${code}` : null });
     }
 
