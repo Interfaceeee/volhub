@@ -1,60 +1,87 @@
 // /api/volunteers
-//   POST  { phone, name, birthday }     — создать/обновить профиль (без подтверждения)
-//   GET   ?phone=...                     — профиль + его записи (со сканером по подтверждённым)
-//   GET   (с PIN координатора)           — список всех волонтёров (для координатора)
-//   PATCH { phone, name?, birthday? }    — координатор правит профиль (нужен PIN)
-import { sql, ensureSchema, checkPin, readBody } from './_db.js';
+//   POST {action:'register', phone, name, birthday, password}  — регистрация (задаёт пароль)
+//   POST {action:'login', phone, password}                     — вход, возвращает профиль+записи
+//   GET  (с правами координатора)                              — список всех волонтёров
+//   PATCH {phone, name?, birthday?, newPassword?}              — координатор правит/сбрасывает пароль
+import { sql, ensureSchema, checkCoordinator, readBody, hashPassword, verifyPassword } from './_db.js';
+
+// собрать профиль + записи волонтёра (сканер только по подтверждённым)
+async function profileWithSignups(phone) {
+  const prof = await sql`SELECT phone, name, birthday FROM volunteers WHERE phone = ${phone}`;
+  if (!prof.length) return null;
+  const rows = await sql`
+    SELECT s.id, s.status, s.badge, s.vest, s.event_id,
+           e.title, e.date, e.place,
+           CASE WHEN s.status = 'approved' THEN e.scan_login ELSE NULL END AS scan_login,
+           CASE WHEN s.status = 'approved' THEN e.scan_pass  ELSE NULL END AS scan_pass
+    FROM signups s JOIN events e ON e.id = s.event_id
+    WHERE s.phone = ${phone}
+    ORDER BY e.date NULLS LAST`;
+  return { profile: prof[0], signups: rows };
+}
 
 export default async function handler(req, res) {
   await ensureSchema();
 
   if (req.method === 'POST') {
     const b = await readBody(req);
+    const action = b.action || 'register';
     const phone = (b.phone || '').trim();
-    const name = (b.name || '').trim();
-    if (!phone || !name) return res.status(400).json({ error: 'Нужны имя и телефон' });
-    await sql`
-      INSERT INTO volunteers (phone, name, birthday)
-      VALUES (${phone}, ${name}, ${b.birthday || null})
-      ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, birthday = EXCLUDED.birthday`;
-    return res.status(200).json({ ok: true, phone });
+
+    if (action === 'register') {
+      const name = (b.name || '').trim();
+      const password = b.password || '';
+      if (!phone || !name || !password) return res.status(400).json({ error: 'Нужны имя, телефон и пароль' });
+      // если профиль уже есть и с паролем — не даём перезаписать (это чужой аккаунт)
+      const exists = await sql`SELECT pass_hash FROM volunteers WHERE phone = ${phone}`;
+      if (exists.length && exists[0].pass_hash) {
+        return res.status(409).json({ error: 'Этот телефон уже зарегистрирован. Войдите по паролю.' });
+      }
+      const hash = hashPassword(password);
+      await sql`
+        INSERT INTO volunteers (phone, name, birthday, pass_hash)
+        VALUES (${phone}, ${name}, ${b.birthday || null}, ${hash})
+        ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, birthday = EXCLUDED.birthday, pass_hash = EXCLUDED.pass_hash`;
+      return res.status(200).json(await profileWithSignups(phone));
+    }
+
+    if (action === 'login') {
+      const password = b.password || '';
+      if (!phone || !password) return res.status(400).json({ error: 'Нужны телефон и пароль' });
+      const rows = await sql`SELECT pass_hash FROM volunteers WHERE phone = ${phone}`;
+      if (!rows.length) return res.status(404).json({ error: 'Профиль не найден. Зарегистрируйтесь.' });
+      if (!verifyPassword(password, rows[0].pass_hash)) return res.status(401).json({ error: 'Неверный пароль' });
+      return res.status(200).json(await profileWithSignups(phone));
+    }
+
+    return res.status(400).json({ error: 'Неизвестное действие' });
   }
 
   if (req.method === 'GET') {
-    // координатор (с PIN) — список всех волонтёров
-    if (checkPin(req)) {
-      const vols = await sql`SELECT * FROM volunteers ORDER BY name`;
-      return res.status(200).json({ volunteers: vols });
-    }
-    // волонтёр — свой профиль и записи
-    const phone = (req.query.phone || '').trim();
-    if (!phone) return res.status(400).json({ error: 'Нужен телефон' });
-    const prof = await sql`SELECT * FROM volunteers WHERE phone = ${phone}`;
-    if (!prof.length) return res.status(404).json({ error: 'Профиль не найден' });
-    // записи волонтёра + данные события; сканер показываем ТОЛЬКО для подтверждённых
-    const rows = await sql`
-      SELECT s.id, s.status, s.badge, s.vest, s.event_id,
-             e.title, e.date, e.place,
-             CASE WHEN s.status = 'approved' THEN e.scan_login ELSE NULL END AS scan_login,
-             CASE WHEN s.status = 'approved' THEN e.scan_pass  ELSE NULL END AS scan_pass
-      FROM signups s JOIN events e ON e.id = s.event_id
-      WHERE s.phone = ${phone}
-      ORDER BY e.date NULLS LAST`;
-    return res.status(200).json({ profile: prof[0], signups: rows });
+    const auth = await checkCoordinator(req);
+    if (!auth.ok) return res.status(401).json({ error: 'Только для координатора' });
+    const vols = await sql`SELECT phone, name, birthday FROM volunteers ORDER BY name`;
+    return res.status(200).json({ volunteers: vols });
   }
 
   if (req.method === 'PATCH') {
-    if (!checkPin(req)) return res.status(401).json({ error: 'Нужен PIN координатора' });
+    const auth = await checkCoordinator(req);
+    if (!auth.ok) return res.status(401).json({ error: 'Только для координатора' });
     const b = await readBody(req);
     const phone = (b.phone || '').trim();
     if (!phone) return res.status(400).json({ error: 'Нужен телефон' });
-    await sql`
-      UPDATE volunteers
-      SET name = COALESCE(${b.name ?? null}, name),
-          birthday = COALESCE(${b.birthday ?? null}, birthday)
-      WHERE phone = ${phone}`;
-    // если у волонтёра менялось имя — обновим и в его заявках для консистентности
-    if (b.name) await sql`UPDATE signups SET name = ${b.name} WHERE phone = ${phone}`;
+    if (b.name !== undefined || b.birthday !== undefined) {
+      await sql`
+        UPDATE volunteers
+        SET name = COALESCE(${b.name ?? null}, name),
+            birthday = COALESCE(${b.birthday ?? null}, birthday)
+        WHERE phone = ${phone}`;
+      if (b.name) await sql`UPDATE signups SET name = ${b.name} WHERE phone = ${phone}`;
+    }
+    // сброс пароля волонтёра координатором
+    if (b.newPassword) {
+      await sql`UPDATE volunteers SET pass_hash = ${hashPassword(b.newPassword)} WHERE phone = ${phone}`;
+    }
     return res.status(200).json({ ok: true });
   }
 
