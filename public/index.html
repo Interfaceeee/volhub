@@ -95,6 +95,12 @@
   .scan-row span{color:var(--sub)}
   .scan-row b{color:var(--ink); font-family:ui-monospace,monospace; font-size:15px}
   main{padding-bottom:80px}
+  .role-card{width:100%; display:flex; align-items:center; gap:14px; text-align:left; cursor:pointer;
+    background:var(--card); border:1.5px solid var(--line); border-radius:16px; padding:18px 16px; margin-bottom:12px; font-family:inherit}
+  .role-card:hover{border-color:var(--green)}
+  .role-emoji{font-size:32px; flex:0 0 auto}
+  .role-ttl{font-size:17px; font-weight:800; color:var(--ink)}
+  .role-sub{font-size:13px; color:var(--sub); margin-top:2px}
   .ecard .foot{display:flex; align-items:center; justify-content:space-between; margin-top:10px}
 
   /* generic card / forms */
@@ -147,35 +153,50 @@
 <path d="M2929.58 378.579H2715.97V479.847H2885.71V598.321H2715.97V703.419H2941.04V819.977H2580.56V262.02H2929.58V378.579Z" fill="#0E151C"/>
 <path d="M4511.49 587.841H4513.37L4624.01 261.087H4818.55V819.044H4681.22V431.023H4679.35L4570.59 729.208H4454.27L4345.51 431.023H4343.63V819.044H4206.31V261.087H4400.85L4511.49 587.841Z" fill="#0E151C"/>
 </svg>
-    <div class="header-sub">Волонтёры</div>
+    <div class="header-sub" id="header-sub">Волонтёры</div>
   </header>
-  <div class="tabs">
-    <button class="tab active" id="tab-vol">Я волонтёр</button>
-    <button class="tab" id="tab-coord">Координатор</button>
-  </div>
   <main id="app"><div class="loading">Загрузка…</div></main>
 </div>
 
 <script>
-const PIN_KEY = '__vh_pin';
 const PHONE_KEY = '__vh_phone';
-let state = { mode:'volunteer', events:[], signups:[], pin:sessionStorage.getItem(PIN_KEY)||null };
+const COORD_KEY = '__vh_coord';
+// role: null (выбор) | 'volunteer' | 'coordinator'
+let state = { role:null, events:[], signups:[] };
+// креды координатора { login, pass, master } из sessionStorage
+let coordAuth = (()=>{ try{ return JSON.parse(sessionStorage.getItem(COORD_KEY)||'null'); }catch(_){ return null; } })();
+
+// заголовки авторизации координатора
+function chdr(extra){
+  const h = Object.assign({}, extra||{});
+  if(coordAuth){
+    if(coordAuth.master) h['x-coord-pin'] = coordAuth.pass;
+    else { h['x-coord-login'] = coordAuth.login; h['x-coord-pass'] = coordAuth.pass; }
+  }
+  return h;
+}
 
 const api = {
   async events(){ const r = await fetch('/api/events'); return (await r.json()).events||[]; },
-  async eventsCoord(){ const r = await fetch('/api/events',{headers:{'x-coord-pin':state.pin}}); return (await r.json()).events||[]; },
+  async eventsCoord(){ const r = await fetch('/api/events',{headers:chdr()}); return (await r.json()).events||[]; },
   async signup(d){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
-  async listSignups(){ const r = await fetch('/api/signups',{headers:{'x-coord-pin':state.pin}}); if(r.status===401) return null; return (await r.json()).signups||[]; },
-  async patch(d){ return fetch('/api/signups',{method:'PATCH',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
-  async delSignup(id){ return fetch('/api/signups?id='+encodeURIComponent(id),{method:'DELETE',headers:{'x-coord-pin':state.pin}}); },
-  async addEvent(d){ return fetch('/api/events',{method:'POST',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
-  async delEvent(id){ return fetch('/api/events?id='+encodeURIComponent(id),{method:'DELETE',headers:{'x-coord-pin':state.pin}}); },
-  async sync(){ return fetch('/api/sync',{method:'POST',headers:{'x-coord-pin':state.pin}}); },
-  // профили волонтёров
-  async saveProfile(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
-  async getProfile(phone){ const r=await fetch('/api/volunteers?phone='+encodeURIComponent(phone)); if(r.status!==200) return null; return r.json(); },
-  async listVolunteers(){ const r=await fetch('/api/volunteers',{headers:{'x-coord-pin':state.pin}}); if(r.status!==200) return []; return (await r.json()).volunteers||[]; },
-  async patchVolunteer(d){ return fetch('/api/volunteers',{method:'PATCH',headers:{'content-type':'application/json','x-coord-pin':state.pin},body:JSON.stringify(d)}); },
+  async listSignups(){ const r = await fetch('/api/signups',{headers:chdr()}); if(r.status===401) return null; return (await r.json()).signups||[]; },
+  async patch(d){ return fetch('/api/signups',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  async delSignup(id){ return fetch('/api/signups?id='+encodeURIComponent(id),{method:'DELETE',headers:chdr()}); },
+  async addEvent(d){ return fetch('/api/events',{method:'POST',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  async delEvent(id){ return fetch('/api/events?id='+encodeURIComponent(id),{method:'DELETE',headers:chdr()}); },
+  async sync(){ return fetch('/api/sync',{method:'POST',headers:chdr()}); },
+  // волонтёры
+  async vReg(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'register'},d))}); },
+  async vLogin(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'login'},d))}); },
+  async listVolunteers(){ const r=await fetch('/api/volunteers',{headers:chdr()}); if(r.status!==200) return []; return (await r.json()).volunteers||[]; },
+  async patchVolunteer(d){ return fetch('/api/volunteers',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  // координаторы
+  async coordLogin(d){ return fetch('/api/coordinators',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'login'},d))}); },
+  async coordAdd(d){ return fetch('/api/coordinators',{method:'POST',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(Object.assign({action:'add'},d))}); },
+  async coordList(){ const r=await fetch('/api/coordinators',{headers:chdr()}); if(r.status!==200) return []; return (await r.json()).coordinators||[]; },
+  async coordReset(d){ return fetch('/api/coordinators',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  async coordDel(login){ return fetch('/api/coordinators?login='+encodeURIComponent(login),{method:'DELETE',headers:chdr()}); },
 };
 
 const el = document.getElementById('app');
@@ -188,9 +209,10 @@ function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return 
 function fmtDateFull(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MOF[+m-1]}`; }
 function weekday(iso){ if(!iso) return ''; return WDF[new Date(iso).getDay()]; }
 
-document.getElementById('tab-vol').onclick = ()=>{ state.mode='volunteer'; setTabs(); render(); };
-document.getElementById('tab-coord').onclick = ()=>{ state.mode='coordinator'; setTabs(); render(); };
-function setTabs(){ document.getElementById('tab-vol').classList.toggle('active',state.mode==='volunteer'); document.getElementById('tab-coord').classList.toggle('active',state.mode==='coordinator'); }
+const headerSub = document.getElementById('header-sub');
+function setHeaderSub(){
+  headerSub.textContent = state.role==='coordinator' ? 'Координатор' : 'Волонтёры';
+}
 
 async function loadEvents(){ state.events = await api.events(); }
 
@@ -202,18 +224,9 @@ function eventImg(e){
 
 // ---------- VOLUNTEER ----------
 // me: профиль текущего волонтёра {phone,name,birthday} или null
-// vtab: 'events' | 'profile'   |   view: 'list' | 'event' | 'done'
+// vauth: 'login' | 'register' — экран авторизации волонтёра
 let me = null;
-let vol = { eventId:'', view:'list', day:'all', vtab:'events', mySignups:[] };
-
-// при старте пробуем подтянуть профиль по сохранённому телефону
-async function initVolunteer(){
-  const saved = localStorage.getItem(PHONE_KEY);
-  if(saved){
-    const data = await api.getProfile(saved);
-    if(data && data.profile){ me = data.profile; vol.mySignups = data.signups||[]; }
-  }
-}
+let vol = { eventId:'', view:'list', day:'all', vtab:'events', mySignups:[], vauth:'login' };
 
 function renderVolunteer(){
   if(!me){ renderLogin(); return; }
@@ -236,26 +249,61 @@ function bindVolNav(){
   if(p) p.onclick=()=>{ vol.vtab='profile'; render(); };
 }
 
-// --- ВХОД / РЕГИСТРАЦИЯ ПРОФИЛЯ ---
+// --- ВХОД / РЕГИСТРАЦИЯ ВОЛОНТЁРА ---
 function renderLogin(){
-  el.innerHTML = `<div class="card" style="margin-top:16px">
-    <h2 style="margin:0 0 4px;font-size:19px">Добро пожаловать!</h2>
-    <p class="muted" style="margin:0 0 16px">Заполни профиль один раз — потом записываться можно в один тап.</p>
-    <label><span>Имя и фамилия</span><input id="lg-name" placeholder="Айгуль Асанова"></label>
-    <label><span>Телефон</span><input id="lg-phone" inputmode="tel" placeholder="+996 700 000 000"></label>
-    <label><span>Дата рождения</span><input id="lg-bday" type="date"></label>
+  const savedPhone = localStorage.getItem(PHONE_KEY) || '';
+  if(vol.vauth==='register'){
+    el.innerHTML = `<button class="back-btn" id="to-role">‹ Выбор роли</button>
+    <div class="card">
+      <h2 style="margin:0 0 4px;font-size:19px">Регистрация волонтёра</h2>
+      <p class="muted" style="margin:0 0 16px">Заполни профиль один раз. Телефон будет твоим логином.</p>
+      <label><span>Имя и фамилия</span><input id="rg-name" placeholder="Айгуль Асанова"></label>
+      <label><span>Телефон</span><input id="rg-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(savedPhone)}"></label>
+      <label><span>Дата рождения</span><input id="rg-bday" type="date"></label>
+      <label><span>Пароль</span><input id="rg-pass" type="password" placeholder="придумай пароль"></label>
+      <div class="err" id="rg-err" style="display:none"></div>
+      <button class="btn" id="rg-go">Зарегистрироваться</button>
+      <button class="btn ghost" id="to-login" style="margin-top:8px">У меня уже есть аккаунт</button>
+    </div>`;
+    document.getElementById('to-role').onclick=()=>{ state.role=null; render(); };
+    document.getElementById('to-login').onclick=()=>{ vol.vauth='login'; render(); };
+    document.getElementById('rg-go').onclick=async()=>{
+      const name=document.getElementById('rg-name').value.trim();
+      const phone=document.getElementById('rg-phone').value.trim();
+      const bday=document.getElementById('rg-bday').value;
+      const password=document.getElementById('rg-pass').value;
+      if(!name||!phone||!password){ showErr('rg-err','Заполни имя, телефон и пароль'); return; }
+      const r=await api.vReg({name,phone,birthday:bday||null,password});
+      const data=await r.json();
+      if(!r.ok){ showErr('rg-err', data.error||'Не получилось зарегистрироваться'); return; }
+      localStorage.setItem(PHONE_KEY, phone); volPass=password;
+      me=data.profile; vol.mySignups=data.signups||[];
+      vol.vtab='events'; vol.view='list'; render();
+    };
+    return;
+  }
+  // вход
+  el.innerHTML = `<button class="back-btn" id="to-role">‹ Выбор роли</button>
+  <div class="card">
+    <h2 style="margin:0 0 4px;font-size:19px">Вход волонтёра</h2>
+    <p class="muted" style="margin:0 0 16px">Войди по телефону и паролю.</p>
+    <label><span>Телефон</span><input id="lg-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(savedPhone)}"></label>
+    <label><span>Пароль</span><input id="lg-pass" type="password" placeholder="пароль"></label>
     <div class="err" id="lg-err" style="display:none"></div>
     <button class="btn" id="lg-go">Войти</button>
+    <button class="btn ghost" id="to-reg" style="margin-top:8px">Я впервые — зарегистрироваться</button>
+    <p class="muted" style="margin:12px 0 0;font-size:13px">Забыл пароль? Сообщи координатору — он сбросит.</p>
   </div>`;
+  document.getElementById('to-role').onclick=()=>{ state.role=null; render(); };
+  document.getElementById('to-reg').onclick=()=>{ vol.vauth='register'; render(); };
   document.getElementById('lg-go').onclick=async()=>{
-    const name=document.getElementById('lg-name').value.trim();
     const phone=document.getElementById('lg-phone').value.trim();
-    const bday=document.getElementById('lg-bday').value;
-    if(!name||!phone){ showErr('lg-err','Заполни имя и телефон'); return; }
-    const r=await api.saveProfile({name,phone,birthday:bday||null});
-    if(!r.ok){ showErr('lg-err','Не получилось войти. Попробуй ещё раз.'); return; }
-    localStorage.setItem(PHONE_KEY, phone);
-    const data=await api.getProfile(phone);
+    const password=document.getElementById('lg-pass').value;
+    if(!phone||!password){ showErr('lg-err','Введи телефон и пароль'); return; }
+    const r=await api.vLogin({phone,password});
+    const data=await r.json();
+    if(!r.ok){ showErr('lg-err', data.error||'Неверный телефон или пароль'); return; }
+    localStorage.setItem(PHONE_KEY, phone); volPass=password;
     me=data.profile; vol.mySignups=data.signups||[];
     vol.vtab='events'; vol.view='list'; render();
   };
@@ -342,11 +390,12 @@ function renderEventPage(){
   };
 }
 
-// обновить свои записи
+// обновить свои записи (пароль держим в памяти на время сессии)
+let volPass = null;
 async function refreshMine(){
-  if(!me) return;
-  const data=await api.getProfile(me.phone);
-  if(data){ vol.mySignups=data.signups||[]; me=data.profile; }
+  if(!me || !volPass) return;
+  const r=await api.vLogin({phone:me.phone,password:volPass});
+  if(r.ok){ const data=await r.json(); vol.mySignups=data.signups||[]; me=data.profile; }
 }
 
 // --- УСПЕХ ---
@@ -388,7 +437,7 @@ function renderProfile(){
     <div class="section-label">Мои записи:</div>
     ${vol.mySignups.length?cards:'<div class="card center muted">Вы ещё никуда не записались.</div>'}` + volNav();
 
-  document.getElementById('logout').onclick=()=>{ localStorage.removeItem(PHONE_KEY); me=null; vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[]}; render(); };
+  document.getElementById('logout').onclick=()=>{ me=null; volPass=null; vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
   bindVolNav();
 }
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
@@ -396,26 +445,37 @@ function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textConte
 // ---------- COORDINATOR ----------
 let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null };
 function renderCoordinator(){
-  if(!state.pin){ renderPin(); return; }
+  if(!coordAuth){ renderCoordLogin(); return; }
   el.innerHTML = `<div class="loading">Загрузка…</div>`;
-  api.listSignups().then(list=>{
-    if(list===null){ state.pin=null; sessionStorage.removeItem(PIN_KEY); renderPin('Неверный PIN'); return; }
-    state.signups = list; drawCoordinator();
+  api.listSignups().then(async list=>{
+    if(list===null){ coordAuth=null; sessionStorage.removeItem(COORD_KEY); renderCoordLogin('Сессия истекла, войдите снова'); return; }
+    state.signups = list; state.events = await api.eventsCoord(); drawCoordinator();
   });
 }
-function renderPin(errMsg){
-  el.innerHTML = `<div class="card" style="max-width:340px;margin:8px auto">
-    <h2 style="margin:0 0 4px;font-size:18px">Вход для координатора</h2>
-    <p class="muted" style="margin:0 0 16px">Введите PIN-код.</p>
-    <label><span>PIN</span><input id="pin" type="password" inputmode="numeric" placeholder="••••"></label>
+function renderCoordLogin(errMsg){
+  el.innerHTML = `<button class="back-btn" id="to-role">‹ Выбор роли</button>
+  <div class="card" style="max-width:360px;margin:0 auto">
+    <h2 style="margin:0 0 4px;font-size:18px">Вход координатора</h2>
+    <p class="muted" style="margin:0 0 16px">Логин и пароль. Первый вход — логин <b>master</b> и мастер-PIN.</p>
+    <label><span>Логин</span><input id="cl-login" placeholder="master или ваш логин"></label>
+    <label><span>Пароль</span><input id="cl-pass" type="password" placeholder="пароль"></label>
     ${errMsg?`<div class="err">${esc(errMsg)}</div>`:''}
-    <button class="btn" id="pin-go">Войти</button>
+    <button class="btn" id="cl-go">Войти</button>
   </div>`;
-  const go=async()=>{ const v=document.getElementById('pin').value.trim(); state.pin=v; const list=await api.listSignups();
-    if(list===null){ state.pin=null; renderPin('Неверный PIN'); return; }
-    sessionStorage.setItem(PIN_KEY,v); state.signups=list; state.events=await api.eventsCoord(); drawCoordinator(); };
-  document.getElementById('pin-go').onclick=go;
-  document.getElementById('pin').onkeydown=e=>{ if(e.key==='Enter') go(); };
+  document.getElementById('to-role').onclick=()=>{ state.role=null; render(); };
+  const go=async()=>{
+    const login=document.getElementById('cl-login').value.trim();
+    const pass=document.getElementById('cl-pass').value;
+    if(!login||!pass){ renderCoordLogin('Введите логин и пароль'); return; }
+    const r=await api.coordLogin({login,password:pass});
+    const data=await r.json();
+    if(!r.ok){ renderCoordLogin(data.error||'Неверный логин или пароль'); return; }
+    coordAuth={ login:data.login, pass, master:!!data.master, name:data.name };
+    sessionStorage.setItem(COORD_KEY, JSON.stringify(coordAuth));
+    state.signups=await api.listSignups(); state.events=await api.eventsCoord(); drawCoordinator();
+  };
+  document.getElementById('cl-go').onclick=go;
+  document.getElementById('cl-pass').onkeydown=e=>{ if(e.key==='Enter') go(); };
 }
 function drawCoordinator(){
   const s = state.signups;
@@ -427,9 +487,10 @@ function drawCoordinator(){
     <div class="stat"><b>${s.filter(x=>x.badge).length}</b><span>бейджей</span></div>
     <div class="stat"><b>${s.filter(x=>x.vest).length}</b><span>манишек</span></div>
   </div>`;
-  const subtabs = `<div class="row" style="margin-top:0;margin-bottom:12px">
+  const subtabs = `<div class="row" style="margin-top:0;margin-bottom:12px;flex-wrap:wrap">
     <button class="tab ${coord.tab==='people'?'active':''}" id="ct-people">Волонтёры</button>
     <button class="tab ${coord.tab==='events'?'active':''}" id="ct-events">События</button>
+    <button class="tab ${coord.tab==='team'?'active':''}" id="ct-team">Команда</button>
     <button class="tab" id="ct-out" style="flex:0 0 auto;padding:11px 14px;background:#E7E9EB;color:var(--sub)">Выйти</button>
   </div>`;
 
@@ -492,7 +553,7 @@ function drawCoordinator(){
       await api.patchVolunteer({phone:oldPhone,name});
       coord.editingVol=null; state.signups=await api.listSignups(); drawCoordinator();
     });
-  } else {
+  } else if(coord.tab==='events') {
     const evs = state.events.map(e=>{
       if (coord.editing === e.id) {
         return `<div class="card">
@@ -563,14 +624,107 @@ function drawCoordinator(){
       if(!title){ return; }
       await api.addEvent({title,date:date||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); state.events=await api.eventsCoord(); drawCoordinator();
     };
+  } else if(coord.tab==='team') {
+    el.innerHTML = stats + subtabs + `<div id="team-zone"></div>`;
   }
-  document.getElementById('ct-people').onclick=()=>{ coord.tab='people'; drawCoordinator(); };
-  document.getElementById('ct-events').onclick=()=>{ coord.tab='events'; drawCoordinator(); };
-  document.getElementById('ct-out').onclick=()=>{ state.pin=null; sessionStorage.removeItem(PIN_KEY); render(); };
+  if(coord.tab==='team'){ drawTeam(); }
+  const bp=document.getElementById('ct-people'); if(bp) bp.onclick=()=>{ coord.tab='people'; drawCoordinator(); };
+  const be=document.getElementById('ct-events'); if(be) be.onclick=()=>{ coord.tab='events'; drawCoordinator(); };
+  const bt=document.getElementById('ct-team'); if(bt) bt.onclick=()=>{ coord.tab='team'; drawCoordinator(); };
+  document.getElementById('ct-out').onclick=()=>{ coordAuth=null; sessionStorage.removeItem(COORD_KEY); state.role=null; render(); };
 }
 
-function render(){ if(state.mode==='volunteer') renderVolunteer(); else renderCoordinator(); }
-(async function init(){ await loadEvents(); await initVolunteer(); render(); })();
+// --- вкладка КОМАНДА: координаторы + сброс паролей волонтёрам ---
+async function drawTeam(){
+  const stats = document.querySelector('.stats'); // оставляем шапку как есть
+  el.querySelector('#team-zone')?.remove();
+  const zone = document.createElement('div');
+  zone.id='team-zone';
+  zone.innerHTML = `<div class="loading">Загрузка…</div>`;
+  el.appendChild(zone);
+  const [coords, vols] = await Promise.all([api.coordList(), api.listVolunteers()]);
+  const coordCards = coords.length ? coords.map(c=>`
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div><div style="font-weight:800">${esc(c.name||c.login)}</div><div class="muted">${esc(c.login)}</div></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn small ghost" data-creset="${esc(c.login)}">Сброс пароля</button>
+        <button class="btn small danger" data-cdel="${esc(c.login)}">Удалить</button>
+      </div>
+    </div>`).join('') : '<div class="card center muted">Пока только мастер-вход. Добавьте координатора ниже.</div>';
+  const volOptions = vols.map(v=>`<option value="${esc(v.phone)}">${esc(v.name)} (${esc(v.phone)})</option>`).join('');
+  zone.innerHTML = `
+    <div class="section-label">Координаторы:</div>
+    ${coordCards}
+    <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Добавить координатора</h3>
+      <label><span>Логин</span><input id="nc-login" placeholder="например, aida"></label>
+      <label><span>Имя</span><input id="nc-name" placeholder="Имя координатора"></label>
+      <label><span>Пароль</span><input id="nc-pass" type="password" placeholder="пароль"></label>
+      <div class="err" id="nc-err" style="display:none"></div>
+      <button class="btn" id="nc-add">Добавить</button>
+    </div>
+    <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Сбросить пароль волонтёру</h3>
+      ${vols.length?`<label><span>Волонтёр</span><select id="rv-phone" style="width:100%;padding:13px 14px;border:1.5px solid var(--line);border-radius:12px;font-size:16px;font-family:inherit">${volOptions}</select></label>
+      <label><span>Новый пароль</span><input id="rv-pass" type="password" placeholder="новый пароль"></label>
+      <div class="err" id="rv-err" style="display:none"></div>
+      <button class="btn" id="rv-go">Сбросить пароль</button>`:'<p class="muted" style="margin:0">Волонтёров пока нет.</p>'}
+    </div>`;
+
+  zone.querySelectorAll('[data-creset]').forEach(b=>b.onclick=async()=>{
+    const login=b.dataset.creset; const np=prompt('Новый пароль для '+login+':'); if(!np) return;
+    await api.coordReset({login,newPassword:np}); alert('Пароль обновлён');
+  });
+  zone.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=async()=>{
+    const login=b.dataset.cdel; if(!confirm('Удалить координатора '+login+'?')) return;
+    await api.coordDel(login); drawCoordinator();
+  });
+  const ncAdd=zone.querySelector('#nc-add'); if(ncAdd) ncAdd.onclick=async()=>{
+    const login=zone.querySelector('#nc-login').value.trim();
+    const name=zone.querySelector('#nc-name').value.trim();
+    const pass=zone.querySelector('#nc-pass').value;
+    if(!login||!pass){ const e=zone.querySelector('#nc-err'); e.textContent='Нужны логин и пароль'; e.style.display='block'; return; }
+    const r=await api.coordAdd({login,name,password:pass}); const d=await r.json();
+    if(!r.ok){ const e=zone.querySelector('#nc-err'); e.textContent=d.error||'Ошибка'; e.style.display='block'; return; }
+    drawCoordinator();
+  };
+  const rvGo=zone.querySelector('#rv-go'); if(rvGo) rvGo.onclick=async()=>{
+    const phone=zone.querySelector('#rv-phone').value;
+    const np=zone.querySelector('#rv-pass').value;
+    if(!np){ const e=zone.querySelector('#rv-err'); e.textContent='Введите новый пароль'; e.style.display='block'; return; }
+    await api.patchVolunteer({phone,newPassword:np}); alert('Пароль волонтёра сброшен');
+    zone.querySelector('#rv-pass').value='';
+  };
+}
+
+// --- ЭКРАН ВЫБОРА РОЛИ ---
+function renderRolePick(){
+  setHeaderSub();
+  el.innerHTML = `<div style="margin-top:24px">
+    <p class="muted" style="text-align:center;margin:0 0 18px">Войдите как:</p>
+    <button class="role-card" id="role-vol">
+      <div class="role-emoji">🙌</div>
+      <div><div class="role-ttl">Я волонтёр</div><div class="role-sub">Записаться на события, мои записи</div></div>
+    </button>
+    <button class="role-card" id="role-coord">
+      <div class="role-emoji">🛡️</div>
+      <div><div class="role-ttl">Я координатор</div><div class="role-sub">Управление событиями и командой</div></div>
+    </button>
+  </div>`;
+  document.getElementById('role-vol').onclick=()=>{ state.role='volunteer'; vol.vauth = localStorage.getItem(PHONE_KEY)?'login':'register'; render(); };
+  document.getElementById('role-coord').onclick=()=>{ state.role='coordinator'; render(); };
+}
+
+function render(){
+  setHeaderSub();
+  if(state.role==='volunteer'){ renderVolunteer(); return; }
+  if(state.role==='coordinator'){ renderCoordinator(); return; }
+  renderRolePick();
+}
+(async function init(){
+  await loadEvents();
+  // если координатор уже залогинен в этой сессии — сразу его панель
+  if(coordAuth){ state.role='coordinator'; }
+  render();
+})();
 </script>
 </body>
 </html>
