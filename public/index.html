@@ -147,6 +147,46 @@
   .err{color:var(--red); font-size:13px; margin:8px 0}
   .loading{text-align:center; color:var(--sub); padding:40px}
   .section-label{font-size:13px; font-weight:700; color:var(--sub); margin:4px 2px 10px}
+
+  /* ---------- АНИМАЦИИ (тонко и быстро) ---------- */
+  @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  @keyframes slideUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pop { 0% { transform:scale(.96); opacity:.6; } 100% { transform:scale(1); opacity:1; } }
+
+  /* контент экрана плавно проявляется */
+  #app > *, #team-zone > * { animation: fadeUp .28s ease both; }
+
+  /* карточки событий — каскадное появление */
+  .egrid .ecard { animation: fadeUp .32s ease both; }
+  .egrid .ecard:nth-child(1){animation-delay:.02s} .egrid .ecard:nth-child(2){animation-delay:.06s}
+  .egrid .ecard:nth-child(3){animation-delay:.10s} .egrid .ecard:nth-child(4){animation-delay:.14s}
+  .egrid .ecard:nth-child(5){animation-delay:.18s} .egrid .ecard:nth-child(6){animation-delay:.22s}
+  .egrid .ecard:nth-child(7){animation-delay:.26s} .egrid .ecard:nth-child(8){animation-delay:.30s}
+
+  /* список карточек (заявки, профиль, пользователи) — мягкое появление */
+  .card { animation: fadeUp .26s ease both; }
+
+  /* страница события — выезд снизу */
+  .evpage { animation: slideUp .34s cubic-bezier(.22,.7,.3,1) both; }
+  .reg-card { animation: fadeUp .34s ease .06s both; }
+
+  /* нажатия — лёгкое «вдавливание» */
+  .ecard, .btn, .role-card, .vnav-btn, .chip, .toggle, .icon-btn, .tab { transition: transform .08s ease, opacity .15s ease, background .15s ease, color .15s ease, border-color .15s ease; }
+  .ecard:active, .btn:active, .role-card:active, .vnav-btn:active, .icon-btn:active { transform: scale(.97); }
+
+  /* таб-бар — мягко всплывает при загрузке экрана */
+  .vnav { animation: fadeIn .3s ease both; }
+  .vnav-btn svg { transition: transform .15s ease; }
+  .vnav-btn.on svg { transform: translateY(-1px) scale(1.08); }
+
+  /* пилюли */
+  .pill { animation: pop .25s ease both; }
+
+  /* уважение к системной настройке «меньше движения» */
+  @media (prefers-reduced-motion: reduce){
+    *, #app > *, .egrid .ecard, .card, .evpage, .reg-card, .vnav, .pill { animation:none !important; transition:none !important; }
+  }
 </style>
 </head>
 <body>
