@@ -48,6 +48,9 @@ export async function ensureSchema() {
       created_at  TIMESTAMPTZ DEFAULT now()
     )`;
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS pass_hash TEXT`;
+  // Telegram: chat_id для отправки уведомлений и временный код привязки
+  await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_chat_id TEXT`;
+  await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_code TEXT`;
   // именованные учётки координаторов (логин + хэш пароля)
   await sql`
     CREATE TABLE IF NOT EXISTS coordinators (
@@ -113,4 +116,18 @@ export function uid() {
 // 8-значный числовой код события (10000000–99999999)
 export function eventId() {
   return String(Math.floor(10000000 + Math.random() * 90000000));
+}
+
+// Отправка сообщения в Telegram через Bot API. Токен — в переменной TELEGRAM_BOT_TOKEN.
+export async function tgSend(chatId, text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !chatId) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true }),
+    });
+    return r.ok;
+  } catch (_) { return false; }
 }
