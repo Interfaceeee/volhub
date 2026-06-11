@@ -62,6 +62,8 @@ export async function ensureSchema() {
   // поля логина/пароля сканера билетов на событии (вводит координатор)
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_login TEXT`;
   await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS scan_pass TEXT`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS time TEXT`;
+  await sql`ALTER TABLE events ADD COLUMN IF NOT EXISTS image TEXT`;
   ready = true;
 }
 
