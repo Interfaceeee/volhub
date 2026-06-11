@@ -39,6 +39,10 @@ export default async function handler(req, res) {
       await sql`UPDATE signups SET badge = ${b.badge} WHERE id = ${b.id}`;
     if (b.vest !== undefined)
       await sql`UPDATE signups SET vest = ${b.vest} WHERE id = ${b.id}`;
+    if (b.name !== undefined)
+      await sql`UPDATE signups SET name = ${b.name} WHERE id = ${b.id}`;
+    if (b.phone !== undefined)
+      await sql`UPDATE signups SET phone = ${b.phone} WHERE id = ${b.id}`;
     return res.status(200).json({ ok: true });
   }
 
