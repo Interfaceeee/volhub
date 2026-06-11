@@ -3,7 +3,7 @@
 //   POST   — волонтёр записывается (PIN НЕ нужен)
 //   PATCH  — координатор меняет статус / бейдж / манишку (нужен PIN)
 //   DELETE — удалить заявку по ?id= (нужен PIN)
-import { sql, ensureSchema, checkPin, readBody, uid } from './_db.js';
+import { sql, ensureSchema, checkCoordinator, readBody, uid } from './_db.js';
 
 export default async function handler(req, res) {
   await ensureSchema();
@@ -22,7 +22,8 @@ export default async function handler(req, res) {
   }
 
   // всё ниже — только координатор
-  if (!checkPin(req)) return res.status(401).json({ error: 'Нужен PIN координатора' });
+  const auth = await checkCoordinator(req);
+  if (!auth.ok) return res.status(401).json({ error: 'Нужен вход координатора' });
 
   if (req.method === 'GET') {
     const signups = await sql`SELECT * FROM signups ORDER BY created_at DESC`;
