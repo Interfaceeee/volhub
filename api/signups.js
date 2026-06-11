@@ -3,7 +3,7 @@
 //   POST   — волонтёр записывается (PIN НЕ нужен)
 //   PATCH  — координатор меняет статус / бейдж / манишку (нужен PIN)
 //   DELETE — удалить заявку по ?id= (нужен PIN)
-import { sql, ensureSchema, checkCoordinator, readBody, uid, verifyPassword } from './_db.js';
+import { sql, ensureSchema, checkCoordinator, readBody, uid, verifyPassword, tgSend } from './_db.js';
 
 export default async function handler(req, res) {
   await ensureSchema();
@@ -48,8 +48,27 @@ export default async function handler(req, res) {
     const b = await readBody(req);
     if (!b.id) return res.status(400).json({ error: 'Нужен id' });
     // обновляем только переданные поля
-    if (b.status !== undefined)
+    if (b.status !== undefined) {
       await sql`UPDATE signups SET status = ${b.status} WHERE id = ${b.id}`;
+      // при подтверждении — шлём уведомление в Telegram, если волонтёр привязан
+      if (b.status === 'approved') {
+        const rows = await sql`
+          SELECT s.phone, e.title, e.date, e.scan_login, e.scan_pass, v.tg_chat_id, v.name AS vname
+          FROM signups s
+          JOIN events e ON e.id = s.event_id
+          LEFT JOIN volunteers v ON v.phone = s.phone
+          WHERE s.id = ${b.id}`;
+        if (rows.length && rows[0].tg_chat_id) {
+          const r = rows[0];
+          let text = `✅ <b>Запись подтверждена!</b>\n\nСобытие: <b>${r.title}</b>`;
+          if (r.scan_login || r.scan_pass) {
+            text += `\n\n🎫 Доступ к сканеру билетов:\nЛогин: <code>${r.scan_login || '—'}</code>\nПароль: <code>${r.scan_pass || '—'}</code>`;
+          }
+          text += `\n\nБейдж и манишку получишь у координатора на месте.`;
+          await tgSend(r.tg_chat_id, text);
+        }
+      }
+    }
     if (b.badge !== undefined)
       await sql`UPDATE signups SET badge = ${b.badge} WHERE id = ${b.id}`;
     if (b.vest !== undefined)
