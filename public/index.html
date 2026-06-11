@@ -50,7 +50,7 @@
     margin-bottom:0; cursor:pointer; transition:.12s; width:100%; text-align:left; font-family:inherit; padding:0; display:block}
   .ecard.sel{border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft)}
   .ecard.full{opacity:.5}
-  .ecard .img{height:110px; background:linear-gradient(135deg,#02B140,#164734); position:relative;
+  .ecard .img{aspect-ratio:5/7; background:linear-gradient(135deg,#02B140,#164734); position:relative;
     display:flex; align-items:center; justify-content:center}
   .ecard .img img{width:100%; height:100%; object-fit:cover}
   .ecard .img .ph{color:rgba(255,255,255,.4)}
@@ -71,7 +71,7 @@
   .back-btn{background:none; border:none; color:var(--sub); font-size:15px; font-weight:600;
     font-family:inherit; cursor:pointer; padding:4px 0 12px; display:block}
   .evpage{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; margin-bottom:12px}
-  .evpage-img{height:190px; background:linear-gradient(135deg,#02B140,#164734); display:flex; align-items:center; justify-content:center}
+  .evpage-img{aspect-ratio:5/7; max-height:420px; background:linear-gradient(135deg,#02B140,#164734); display:flex; align-items:center; justify-content:center}
   .evpage-img img{width:100%; height:100%; object-fit:cover}
   .evpage-img .ph{color:rgba(255,255,255,.4)}
   .evpage-body{padding:18px 16px}
@@ -166,6 +166,7 @@
 
 <script>
 const PHONE_KEY = '__vh_phone';
+const VOL_KEY = '__vh_vol';
 const COORD_KEY = '__vh_coord';
 // role: null (выбор) | 'volunteer' | 'coordinator'
 let state = { role:null, events:[], signups:[] };
@@ -282,7 +283,7 @@ function renderLogin(){
       const r=await api.vReg({name,phone,birthday:bday||null,password});
       const data=await r.json();
       if(!r.ok){ showErr('rg-err', data.error||'Не получилось зарегистрироваться'); return; }
-      localStorage.setItem(PHONE_KEY, phone); volPass=password;
+      localStorage.setItem(PHONE_KEY, phone); volPass=password; localStorage.setItem(VOL_KEY, JSON.stringify({phone,pass:password}));
       me=data.profile; vol.mySignups=data.signups||[];
       vol.vtab='events'; vol.view='list'; render();
     };
@@ -309,7 +310,7 @@ function renderLogin(){
     const r=await api.vLogin({phone,password});
     const data=await r.json();
     if(!r.ok){ showErr('lg-err', data.error||'Неверный телефон или пароль'); return; }
-    localStorage.setItem(PHONE_KEY, phone); volPass=password;
+    localStorage.setItem(PHONE_KEY, phone); volPass=password; localStorage.setItem(VOL_KEY, JSON.stringify({phone,pass:password}));
     me=data.profile; vol.mySignups=data.signups||[];
     vol.vtab='events'; vol.view='list'; render();
   };
@@ -456,7 +457,7 @@ function renderProfile(){
     <div class="section-label">Мои записи:</div>
     ${vol.mySignups.length?cards:'<div class="card center muted">Вы ещё никуда не записались.</div>'}` + volNav();
 
-  document.getElementById('logout').onclick=()=>{ me=null; volPass=null; vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
+  document.getElementById('logout').onclick=()=>{ me=null; volPass=null; localStorage.removeItem(VOL_KEY); vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
   bindVolNav();
 }
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
@@ -680,7 +681,6 @@ async function drawTeam(){
         <button class="btn small danger" data-cdel="${esc(c.login)}">Удалить</button>
       </div>
     </div>`).join('') : '<div class="card center muted">Пока только мастер-вход. Добавьте координатора ниже.</div>';
-  const volOptions = vols.map(v=>`<option value="${esc(v.phone)}">${esc(v.name)} (${esc(v.phone)})</option>`).join('');
   zone.innerHTML = `
     <div class="section-label">Координаторы:</div>
     ${coordCards}
@@ -692,10 +692,8 @@ async function drawTeam(){
       <button class="btn" id="nc-add">Добавить</button>
     </div>
     <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Сбросить пароль волонтёру</h3>
-      ${vols.length?`<label><span>Волонтёр</span><select id="rv-phone" style="width:100%;padding:13px 14px;border:1.5px solid var(--line);border-radius:12px;font-size:16px;font-family:inherit">${volOptions}</select></label>
-      <label><span>Новый пароль</span><input id="rv-pass" type="password" placeholder="новый пароль"></label>
-      <div class="err" id="rv-err" style="display:none"></div>
-      <button class="btn" id="rv-go">Сбросить пароль</button>`:'<p class="muted" style="margin:0">Волонтёров пока нет.</p>'}
+      ${vols.length?`<input id="rv-search" class="search" placeholder="Поиск по имени или телефону…">
+      <div id="rv-results" style="margin-top:10px"></div>`:'<p class="muted" style="margin:0">Волонтёров пока нет.</p>'}
     </div>`;
 
   zone.querySelectorAll('[data-creset]').forEach(b=>b.onclick=async()=>{
@@ -715,13 +713,24 @@ async function drawTeam(){
     if(!r.ok){ const e=zone.querySelector('#nc-err'); e.textContent=d.error||'Ошибка'; e.style.display='block'; return; }
     drawCoordinator();
   };
-  const rvGo=zone.querySelector('#rv-go'); if(rvGo) rvGo.onclick=async()=>{
-    const phone=zone.querySelector('#rv-phone').value;
-    const np=zone.querySelector('#rv-pass').value;
-    if(!np){ const e=zone.querySelector('#rv-err'); e.textContent='Введите новый пароль'; e.style.display='block'; return; }
-    await api.patchVolunteer({phone,newPassword:np}); alert('Пароль волонтёра сброшен');
-    zone.querySelector('#rv-pass').value='';
-  };
+  // поиск волонтёра + сброс пароля
+  const rvSearch=zone.querySelector('#rv-search'), rvRes=zone.querySelector('#rv-results');
+  function renderRv(){
+    const q=(rvSearch.value||'').trim().toLowerCase();
+    let list = vols;
+    if(q) list = vols.filter(v=>(v.name||'').toLowerCase().includes(q)||(v.phone||'').toLowerCase().includes(q));
+    list = list.slice(0,30);
+    rvRes.innerHTML = q===''? '<p class="muted" style="margin:0;font-size:13px">Начните вводить имя или телефон…</p>'
+      : (list.length? list.map(v=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)">
+          <div><div style="font-weight:700">${esc(v.name)}</div><div class="muted">${esc(v.phone)}</div></div>
+          <button class="btn small ghost" data-rvphone="${esc(v.phone)}">Сбросить</button>
+        </div>`).join('') : '<p class="muted" style="margin:0;font-size:13px">Никого не найдено.</p>');
+    rvRes.querySelectorAll('[data-rvphone]').forEach(b=>b.onclick=async()=>{
+      const phone=b.dataset.rvphone; const np=prompt('Новый пароль для '+phone+':'); if(!np) return;
+      await api.patchVolunteer({phone,newPassword:np}); alert('Пароль волонтёра сброшен');
+    });
+  }
+  if(rvSearch){ rvSearch.oninput=renderRv; renderRv(); }
 }
 
 // --- ЭКРАН ВЫБОРА РОЛИ ---
@@ -750,8 +759,17 @@ function render(){
 }
 (async function init(){
   await loadEvents();
-  // если координатор уже залогинен в этой сессии — сразу его панель
-  if(coordAuth){ state.role='coordinator'; }
+  // координатор залогинен в этой сессии — сразу его панель
+  if(coordAuth){ state.role='coordinator'; render(); return; }
+  // волонтёр: пробуем восстановить сессию из localStorage
+  try{
+    const saved = JSON.parse(localStorage.getItem(VOL_KEY)||'null');
+    if(saved && saved.phone && saved.pass){
+      const r = await api.vLogin({phone:saved.phone, password:saved.pass});
+      if(r.ok){ const data=await r.json(); me=data.profile; vol.mySignups=data.signups||[]; volPass=saved.pass; state.role='volunteer'; vol.vtab='events'; vol.view='list'; }
+      else { localStorage.removeItem(VOL_KEY); }
+    }
+  }catch(_){ }
   render();
 })();
 </script>
