@@ -42,9 +42,10 @@
   .cal-day .wd{font-size:13px; font-weight:600; color:var(--sub); margin-top:1px}
   .cal-day.active{background:var(--green); border-color:var(--green)}
   .cal-day.active .dn,.cal-day.active .wd{color:#fff}
-  .cal-day.alldays{width:auto; padding:0 28px; height:51px; border:none; background:var(--green)}
-  .cal-day.alldays .dn{font-size:16px; font-weight:700; color:#fff}
-  .cal-day.alldays.active{background:var(--green)}
+  .cal-day.alldays{width:auto; padding:0 28px; height:51px; border:1.5px solid var(--green-line); background:var(--card)}
+  .cal-day.alldays .dn{font-size:16px; font-weight:700; color:var(--ink)}
+  .cal-day.alldays.active{background:var(--green); border-color:var(--green)}
+  .cal-day.alldays.active .dn{color:#fff}
   .cal-months{display:flex; gap:0; font-size:16px; font-weight:700; color:var(--month); margin:6px 2px 2px}
 
   /* event card */
@@ -137,6 +138,7 @@
   .btn.ghost{background:transparent; color:var(--ink); border:1.5px solid var(--line); box-shadow:none}
   .btn.small{width:auto; padding:9px 15px; font-size:14px}
   .btn.danger{background:transparent; color:var(--red); border:1.5px solid #F3CEC9; box-shadow:none}
+  .btn.danger-outline{background:#fff; color:var(--red); border:1.5px solid var(--red); box-shadow:none}
   .pill{font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; white-space:nowrap}
   .pill.amber{background:var(--amber-soft); color:var(--amber)}
   .pill.green{background:var(--green-soft); color:var(--green-dark)}
@@ -241,6 +243,7 @@ const api = {
   async events(){ const r = await fetch('/api/events'); return (await r.json()).events||[]; },
   async eventsCoord(){ const r = await fetch('/api/events',{headers:chdr()}); return (await r.json()).events||[]; },
   async signup(d){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
+  async cancelSignup(eventId){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'cancel',phone:me.phone,password:volPass,eventId})}); },
   async listSignups(){ const r = await fetch('/api/signups',{headers:chdr()}); if(r.status===401) return null; return (await r.json()).signups||[]; },
   async patch(d){ return fetch('/api/signups',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
   async delSignup(id){ return fetch('/api/signups?id='+encodeURIComponent(id),{method:'DELETE',headers:chdr()}); },
@@ -461,9 +464,9 @@ function renderEventPage(){
             </div>`}
       </div>
     </div>
-    ${already?'':`<div class="sticky-bar">
-      <button class="btn" id="v-submit" ${full?'disabled':''}>${full?'Мест больше нет':'Записаться'}</button>
-    </div>`}`;
+    ${already
+      ? `<div class="sticky-bar"><button class="btn danger-outline" id="v-cancel">Отменить запись</button></div>`
+      : `<div class="sticky-bar"><button class="btn" id="v-submit" ${full?'disabled':''}>${full?'Мест больше нет':'Записаться'}</button></div>`}`;
 
   document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
   const sub=document.getElementById('v-submit');
@@ -473,6 +476,12 @@ function renderEventPage(){
     const r = await api.signup({name:me.name,phone:me.phone,eventId:vol.eventId});
     if(r.ok){ await refreshMine(); vol.view='done'; await loadEvents(); render(); }
     else showErr('v-err','Не получилось отправить. Попробуй ещё раз.');
+  };
+  const cancel=document.getElementById('v-cancel');
+  if(cancel) cancel.onclick=async()=>{
+    if(!confirm('Отменить запись на это событие?')) return;
+    const r=await api.cancelSignup(vol.eventId);
+    if(r.ok){ await refreshMine(); await loadEvents(); vol.view='list'; render(); }
   };
 }
 
@@ -510,6 +519,7 @@ function renderProfile(){
         <div class="scan-row"><span>Логин</span><b>${esc(s.scan_login||'—')}</b></div>
         <div class="scan-row"><span>Пароль</span><b>${esc(s.scan_pass||'—')}</b></div>
       </div>` : (appr?'<div class="muted" style="margin-top:8px;font-size:13px">Доступ к сканеру координатор добавит позже.</div>':'')}
+      <button class="btn danger-outline small" data-cancel="${esc(s.event_id)}" style="margin-top:12px">Отменить запись</button>
     </div>`;
   }).join('');
 
@@ -524,6 +534,11 @@ function renderProfile(){
     ${vol.mySignups.length?cards:'<div class="card center muted">Вы ещё никуда не записались.</div>'}` + volNav();
 
   document.getElementById('logout').onclick=()=>{ me=null; volPass=null; localStorage.removeItem(VOL_KEY); vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
+  document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Отменить запись на это событие?')) return;
+    const r=await api.cancelSignup(b.dataset.cancel);
+    if(r.ok){ await refreshMine(); await loadEvents(); render(); }
+  });
   bindVolNav();
 }
 function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
