@@ -8,8 +8,19 @@ export default async function handler(req, res) {
   await ensureSchema();
 
   if (req.method === 'GET') {
+    // Координатор (с PIN) получает полные данные, включая логин/пароль сканера.
+    if (checkPin(req)) {
+      const events = await sql`
+        SELECT e.*,
+          (SELECT COUNT(*) FROM signups s
+            WHERE s.event_id = e.id AND s.status <> 'rejected') AS taken
+        FROM events e
+        ORDER BY e.date NULLS LAST, e.created_at`;
+      return res.status(200).json({ events });
+    }
+    // ВАЖНО: scan_login/scan_pass НЕ отдаём в общий список (это секрет).
     const events = await sql`
-      SELECT e.*,
+      SELECT e.id, e.title, e.date, e.place, e.need, e.source, e.created_at,
         (SELECT COUNT(*) FROM signups s
           WHERE s.event_id = e.id AND s.status <> 'rejected') AS taken
       FROM events e
@@ -23,12 +34,14 @@ export default async function handler(req, res) {
     if (!b.title) return res.status(400).json({ error: 'Нужно название' });
     const id = b.id || uid();
     await sql`
-      INSERT INTO events (id, title, date, place, need, source)
+      INSERT INTO events (id, title, date, place, need, source, scan_login, scan_pass)
       VALUES (${id}, ${b.title}, ${b.date || null}, ${b.place || null},
-              ${b.need || 4}, ${b.source || 'manual'})
+              ${b.need || 4}, ${b.source || 'manual'},
+              ${b.scan_login || null}, ${b.scan_pass || null})
       ON CONFLICT (id) DO UPDATE SET
         title = EXCLUDED.title, date = EXCLUDED.date,
-        place = EXCLUDED.place, need = EXCLUDED.need`;
+        place = EXCLUDED.place, need = EXCLUDED.need,
+        scan_login = EXCLUDED.scan_login, scan_pass = EXCLUDED.scan_pass`;
     return res.status(200).json({ ok: true, id });
   }
 
