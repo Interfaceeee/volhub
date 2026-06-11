@@ -24,10 +24,14 @@ export default async function handler(req, res) {
     if (!b.name || !b.phone || !b.eventId) {
       return res.status(400).json({ error: 'Заполни имя, телефон и событие' });
     }
+    const phone = b.phone.trim();
+    // защита от дублей: один волонтёр — одна запись на событие
+    const dup = await sql`SELECT id FROM signups WHERE phone = ${phone} AND event_id = ${b.eventId}`;
+    if (dup.length) return res.status(200).json({ ok: true, id: dup[0].id, already: true });
     const id = uid();
     await sql`
       INSERT INTO signups (id, name, phone, event_id, status)
-      VALUES (${id}, ${b.name.trim()}, ${b.phone.trim()}, ${b.eventId}, 'pending')`;
+      VALUES (${id}, ${b.name.trim()}, ${phone}, ${b.eventId}, 'pending')`;
     return res.status(200).json({ ok: true, id });
   }
 
