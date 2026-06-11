@@ -471,17 +471,25 @@ function renderEventPage(){
   document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
   const sub=document.getElementById('v-submit');
   if(sub) sub.onclick=async()=>{
-    // спросим разрешение на уведомления при первой записи (если поддерживается)
+    if(sub.disabled) return;
+    sub.disabled=true; sub.textContent='Записываю…';
     try{ if('Notification' in window && Notification.permission==='default'){ await Notification.requestPermission(); } }catch(_){}
-    const r = await api.signup({name:me.name,phone:me.phone,eventId:vol.eventId});
-    if(r.ok){ await refreshMine(); vol.view='done'; await loadEvents(); render(); }
-    else showErr('v-err','Не получилось отправить. Попробуй ещё раз.');
+    try{
+      const r = await api.signup({name:me.name,phone:me.phone,eventId:vol.eventId});
+      if(r.ok){ await refreshMine(); vol.view='done'; await loadEvents(); render(); }
+      else { showErr('v-err','Не получилось отправить. Попробуй ещё раз.'); sub.disabled=false; sub.textContent='Записаться'; }
+    }catch(_){ showErr('v-err','Ошибка сети. Попробуй ещё раз.'); sub.disabled=false; sub.textContent='Записаться'; }
   };
   const cancel=document.getElementById('v-cancel');
   if(cancel) cancel.onclick=async()=>{
+    if(cancel.disabled) return;
     if(!confirm('Отменить запись на это событие?')) return;
-    const r=await api.cancelSignup(vol.eventId);
-    if(r.ok){ await refreshMine(); await loadEvents(); vol.view='list'; render(); }
+    cancel.disabled=true; cancel.textContent='Отменяю…';
+    try{
+      const r=await api.cancelSignup(vol.eventId);
+      if(r.ok){ await refreshMine(); await loadEvents(); vol.view='list'; render(); }
+      else { cancel.disabled=false; cancel.textContent='Отменить запись'; }
+    }catch(_){ cancel.disabled=false; cancel.textContent='Отменить запись'; }
   };
 }
 
@@ -535,9 +543,12 @@ function renderProfile(){
 
   document.getElementById('logout').onclick=()=>{ me=null; volPass=null; localStorage.removeItem(VOL_KEY); vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
   document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{
+    if(b.disabled) return;
     if(!confirm('Отменить запись на это событие?')) return;
+    b.disabled=true; b.textContent='Отменяю…';
     const r=await api.cancelSignup(b.dataset.cancel);
     if(r.ok){ await refreshMine(); await loadEvents(); render(); }
+    else { b.disabled=false; b.textContent='Отменить запись'; }
   });
   bindVolNav();
 }
