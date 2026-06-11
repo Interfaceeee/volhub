@@ -1,14 +1,14 @@
 // /api/events
-//   GET    — список событий (для всех)
-//   POST   — добавить событие (нужен PIN координатора)
-//   DELETE — удалить событие по ?id= (нужен PIN)
+//   GET    - list events
+//   POST   - add/update event (coordinator PIN)
+//   DELETE - remove event by ?id= (coordinator PIN)
 import { sql, ensureSchema, checkCoordinator, readBody, uid, eventId } from './_db.js';
 
 export default async function handler(req, res) {
   await ensureSchema();
 
   if (req.method === 'GET') {
-    // Координатор (с входом) получает полные данные, включая логин/пароль сканера.
+    // Coordinator (logged in) gets full data incl. scanner creds.
     if ((await checkCoordinator(req)).ok) {
       const events = await sql`
         SELECT e.*,
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
         ORDER BY e.date NULLS LAST, e.created_at`;
       return res.status(200).json({ events });
     }
-    // ВАЖНО: scan_login/scan_pass НЕ отдаём в общий список (это секрет).
+    // Public list: do NOT expose scan_login/scan_pass.
     const events = await sql`
       SELECT e.id, e.title, e.date, e.time, e.place, e.need, e.source, e.created_at, e.image,
         (SELECT COUNT(*) FROM signups s
@@ -33,12 +33,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Нужен вход координатора' });
+    if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Coordinator login required' });
     const b = await readBody(req);
-    if (!b.title) return res.status(400).json({ error: 'Нужно название' });
+    if (!b.title) return res.status(400).json({ error: 'Title required' });
     let id = b.id;
     if (!id) {
-      // генерируем уникальный 8-значный код
+      // generate unique 8-digit code
       do { id = eventId(); } while ((await sql`SELECT 1 FROM events WHERE id = ${id}`).length);
     }
     await sql`
@@ -55,9 +55,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Нужен вход координатора' });
+    if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Coordinator login required' });
     const id = req.query.id;
-    if (!id) return res.status(400).json({ error: 'Нужен id' });
+    if (!id) return res.status(400).json({ error: 'id required' });
     await sql`DELETE FROM signups WHERE event_id = ${id}`;
     await sql`DELETE FROM events WHERE id = ${id}`;
     return res.status(200).json({ ok: true });
