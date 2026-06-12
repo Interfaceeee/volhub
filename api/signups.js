@@ -1,108 +1,1275 @@
-// /api/signups
-//   GET    — список заявок (нужен PIN: это координаторский экран)
-//   POST   — волонтёр записывается (PIN НЕ нужен)
-//   PATCH  — координатор меняет статус / бейдж / манишку (нужен PIN)
-//   DELETE — удалить заявку по ?id= (нужен PIN)
-import { sql, ensureSchema, checkCoordinator, readBody, uid, verifyPassword, tgSend } from './_db.js';
-
-export default async function handler(req, res) {
-  await ensureSchema();
-
-  if (req.method === 'POST') {
-    const b = await readBody(req);
-    // отмена своей записи волонтёром: нужен телефон+пароль и eventId
-    if (b.action === 'cancel') {
-      const phone = (b.phone || '').trim();
-      const password = b.password || '';
-      if (!phone || !password || !b.eventId) return res.status(400).json({ error: 'Нужны телефон, пароль и событие' });
-      const v = await sql`SELECT pass_hash FROM volunteers WHERE phone = ${phone}`;
-      if (!v.length || !verifyPassword(password, v[0].pass_hash)) return res.status(401).json({ error: 'Неверный пароль' });
-      await sql`DELETE FROM signups WHERE phone = ${phone} AND event_id = ${b.eventId}`;
-      return res.status(200).json({ ok: true });
-    }
-    // запись волонтёра — открыта для всех
-    if (!b.name || !b.phone || !b.eventId) {
-      return res.status(400).json({ error: 'Заполни имя, телефон и событие' });
-    }
-    const phone = b.phone.trim();
-    // защита от дублей: один волонтёр — одна запись на событие
-    const dup = await sql`SELECT id FROM signups WHERE phone = ${phone} AND event_id = ${b.eventId}`;
-    if (dup.length) return res.status(200).json({ ok: true, id: dup[0].id, already: true });
-    const id = uid();
-    await sql`
-      INSERT INTO signups (id, name, phone, event_id, status)
-      VALUES (${id}, ${b.name.trim()}, ${phone}, ${b.eventId}, 'pending')`;
-    return res.status(200).json({ ok: true, id });
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Волонтёры Ticketon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#00B449; --green-dark:#164734; --green-soft:#E4F6E9;
+    --green-line:#CBECC6; --place-bg:#F3F4F5; --month:#BDC3CD;
+    --ink:#0E151C; --sub:#71757A; --line:#ECECEC; --bg:#F2F3F6; --card:#fff;
+    --amber:#B7791F; --amber-soft:#FBEFD2; --red:#D03A2C;
   }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'Inter',system-ui,sans-serif}
+  .wrap{max-width:460px; margin:0 auto; min-height:100vh; background:var(--bg)}
 
-  // ПУБЛИЧНО: список записавшихся на конкретное событие (без телефонов) — для страницы события
-  if (req.method === 'GET' && req.query.eventId) {
-    const eventId = req.query.eventId;
-    const rows = await sql`
-      SELECT s.name, s.status, v.avatar
-      FROM signups s
-      LEFT JOIN volunteers v ON v.phone = s.phone
-      WHERE s.event_id = ${eventId} AND s.status <> 'rejected'
-      ORDER BY (s.status = 'approved') DESC, s.created_at`;
-    const people = rows.map(r => ({
-      name: r.name,
-      approved: r.status === 'approved',
-      avatar: r.avatar || null,
-    }));
-    return res.status(200).json({ people });
+  /* header */
+  header{background:var(--card); padding:14px 16px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:10}
+  .logo-full{height:30px; width:auto; flex:0 0 auto}
+  .header-sub{margin-left:auto; font-size:13px; font-weight:600; color:var(--sub)}
+
+  /* tabs */
+  .tabs{display:flex; gap:8px; padding:12px 16px 4px; background:var(--bg); position:sticky; top:63px; z-index:9}
+  .tab{flex:1; padding:11px 0; border-radius:12px; font-size:14px; font-weight:700;
+    border:none; background:#E7E9EB; color:var(--sub); cursor:pointer; font-family:inherit}
+  .tab.active{background:var(--green); color:#fff; box-shadow:0 2px 8px rgba(79,175,59,.35)}
+
+  main{padding:12px 16px 48px}
+
+  /* calendar strip */
+  .cal{display:flex; gap:10px; overflow-x:auto; padding:4px 2px 14px; scrollbar-width:none; align-items:center}
+  .cal::-webkit-scrollbar{display:none}
+  .cal-day{flex:0 0 auto; width:47px; height:51px; border-radius:16px; text-align:center;
+    background:var(--card); border:1.5px solid var(--green-line); cursor:pointer; transition:.12s;
+    display:flex; flex-direction:column; align-items:center; justify-content:center}
+  .cal-day .dn{font-size:18px; font-weight:800; color:var(--ink)}
+  .cal-day .wd{font-size:13px; font-weight:600; color:var(--sub); margin-top:1px}
+  .cal-day.active{background:var(--green); border-color:var(--green)}
+  .cal-day.active .dn,.cal-day.active .wd{color:#fff}
+  .cal-day.alldays{width:auto; padding:0 28px; height:51px; border:1.5px solid var(--green-line); background:var(--card)}
+  .cal-day.alldays .dn{font-size:16px; font-weight:700; color:var(--ink)}
+  .cal-day.alldays.active{background:var(--green); border-color:var(--green)}
+  .cal-day.alldays.active .dn{color:#fff}
+  .cal-months{display:flex; gap:0; font-size:16px; font-weight:700; color:var(--month); margin:6px 2px 2px}
+
+  /* event card */
+  .ecard{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden;
+    margin-bottom:0; cursor:pointer; transition:.12s; width:100%; text-align:left; font-family:inherit; padding:0; display:block}
+  .ecard.sel{border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft)}
+  .ecard.full{opacity:.5}
+  .ecard .img{aspect-ratio:5/7; background:linear-gradient(135deg,var(--green),var(--green-dark)); position:relative;
+    display:flex; align-items:center; justify-content:center; border-bottom-right-radius:15px}
+  .ecard .img img{width:100%; height:100%; object-fit:cover; border-bottom-right-radius:15px}
+  .ecard .img .ph{color:rgba(255,255,255,.4)}
+  .ecard .body{padding:8px 12px 14px}
+  .ecard .ttl{font-size:15px; font-weight:700; color:#000; line-height:1.2;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height:36px}
+  .ecard .meta-date{font-size:14px; margin-top:5px}
+  .ecard .meta-date b{font-weight:700; color:#000}
+  .ecard .meta-date span{color:#000; font-weight:400}
+  .ecard .meta-place{display:inline-block; max-width:100%; margin-top:10px; padding:8px 12px;
+    background:var(--place-bg); color:#000; font-size:10px; font-weight:700;
+    border-radius:14px 14px 14px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .ecard .foot{margin-top:8px}
+  .egrid{display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start}
+  .search-wrap{margin:4px 0 10px}
+  .search{width:100%; padding:12px 14px; border:1.5px solid var(--line); border-radius:12px;
+    font-size:15px; font-family:inherit; outline:none; background:var(--card)}
+  .search:focus{border-color:var(--green)}
+  .icon-btn{background:none; border:1.5px solid var(--line); border-radius:10px; padding:7px 9px; font-size:15px; cursor:pointer; line-height:1}
+  .icon-btn:hover{border-color:var(--green)}
+  .avatar{width:60px; height:60px; flex:0 0 auto; border-radius:50%; background:var(--green-soft);
+    color:var(--green); display:flex; align-items:center; justify-content:center}
+  .modal-bg{position:fixed; inset:0; background:rgba(14,21,28,.45); z-index:100; display:flex;
+    align-items:center; justify-content:center; padding:24px; animation:fadeIn .2s ease both}
+  .modal{background:var(--card); border-radius:20px; padding:24px; max-width:380px; width:100%;
+    text-align:center; animation:pop .25s ease both}
+  .modal-ttl{font-size:20px; font-weight:800; margin-bottom:10px}
+  .modal-text{font-size:14px; color:var(--sub); line-height:1.5; margin-bottom:18px}
+
+  /* event page */
+  .back-btn{background:none; border:none; color:var(--sub); font-size:15px; font-weight:600;
+    font-family:inherit; cursor:pointer; padding:4px 0 12px; display:block}
+  .evp{padding:0 0 90px}
+  .evp-poster{aspect-ratio:1/1.3; max-height:520px; background:linear-gradient(135deg,var(--green),var(--green-dark));
+    display:flex; align-items:center; justify-content:center; border-radius:18px; overflow:hidden;
+    border:1px solid var(--line); box-shadow:0 4px 18px rgba(0,0,0,.08)}
+  .evp-poster img{width:100%; height:100%; object-fit:cover}
+  .evp-poster .ph{color:rgba(255,255,255,.4)}
+  .evp-ttl{margin:18px 0 14px; font-size:26px; font-weight:800; line-height:1.15; color:#000}
+  .evp-note{font-size:14px; color:var(--sub); margin-bottom:8px}
+  .evp-note b{color:var(--ink)}
+  .evp-info{margin-top:14px; border-top:1px solid var(--line); padding-top:6px}
+  .evp-line{display:flex; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--line);
+    font-size:16px; font-weight:600; color:var(--ink)}
+  .evp-line:last-child{border-bottom:none}
+  .evp-ico{flex:0 0 auto; width:38px; height:38px; border-radius:10px; background:var(--green-soft);
+    display:flex; align-items:center; justify-content:center; font-size:18px}
+  .evp-poster{position:relative}
+  .evp-cat{position:absolute; top:12px; left:12px; background:var(--green); color:#fff;
+    font-size:12px; font-weight:700; padding:6px 12px; border-radius:20px; z-index:2}
+  .evp-people-row{display:flex; gap:14px; overflow-x:auto; padding:4px 2px 8px; scrollbar-width:none}
+  .evp-person{flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:5px; width:60px; position:relative}
+  .evp-person-name{font-size:12px; color:var(--sub); max-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center}
+  .evp-person-ok{position:absolute; top:-2px; right:8px; background:var(--green); color:#fff;
+    width:18px; height:18px; border-radius:50%; font-size:11px; display:flex; align-items:center; justify-content:center; border:2px solid var(--card)}
+  .reg-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin:0 -16px 90px; }
+  .reg-ttl{margin:0 0 14px; font-size:16px; font-weight:800; color:var(--ink)}
+  .sticky-bar{position:fixed; left:0; right:0; bottom:0; padding:12px 16px;
+    background:var(--card); border-top:1px solid var(--line); z-index:20}
+  .sticky-bar .btn{max-width:460px; margin:0 auto; display:block}
+
+  .hello{font-size:15px; font-weight:700; color:var(--ink); margin:4px 2px 6px}
+  .page-title{font-size:35px; font-weight:700; color:#000; margin:8px 2px 10px; line-height:1.1}
+  .vnav{position:fixed; left:0; right:0; bottom:0; display:flex; gap:4px; max-width:460px; margin:0 auto;
+    padding:14px 24px calc(14px + env(safe-area-inset-bottom)); background:var(--card);
+    border-radius:21px 21px 0 0; box-shadow:0 -4px 39px rgba(0,0,0,.12); z-index:15}
+  .vnav-btn{flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 0;
+    border-radius:12px; font-size:11px; font-weight:700; font-family:inherit;
+    border:none; background:none; color:var(--sub); cursor:pointer}
+  .vnav-btn.on{color:var(--green)}
+  .vnav-btn svg{display:block}
+  .scan-box{margin-top:12px; padding:12px; border-radius:12px; background:var(--green-soft); border:1px solid #CDEAC4}
+  .scan-ttl{font-size:13px; font-weight:800; color:var(--green-dark); margin-bottom:8px}
+  .scan-row{display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:14px}
+  .scan-row span{color:var(--sub)}
+  .scan-row b{color:var(--ink); font-family:ui-monospace,monospace; font-size:15px}
+  main{padding-bottom:80px}
+  .role-card{width:100%; display:flex; align-items:center; gap:14px; text-align:left; cursor:pointer;
+    background:var(--card); border:1.5px solid var(--line); border-radius:16px; padding:18px 16px; margin-bottom:12px; font-family:inherit}
+  .role-card:hover{border-color:var(--green)}
+  .role-emoji{font-size:32px; flex:0 0 auto}
+  .role-ttl{font-size:17px; font-weight:800; color:var(--ink)}
+  .role-sub{font-size:13px; color:var(--sub); margin-top:2px}
+  .ecard .foot{display:flex; align-items:center; justify-content:space-between; margin-top:10px}
+
+  /* generic card / forms */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:12px}
+  label{display:block; margin-bottom:14px}
+  label span{display:block; font-size:13px; font-weight:700; color:var(--sub); margin-bottom:6px}
+  input{width:100%; padding:13px 14px; border:1.5px solid var(--line); border-radius:12px;
+    font-size:16px; background:var(--card); color:var(--ink); font-family:inherit; outline:none}
+  input:focus{border-color:var(--green)}
+  /* iOS: date/time инпуты не должны разъезжаться по высоте */
+  input[type="date"], input[type="time"]{ -webkit-appearance:none; appearance:none; min-height:50px; line-height:1.2; }
+  input[type="number"]{ -webkit-appearance:none; appearance:none; }
+  /* аватарка-фото в кружке (инициалы или картинка) */
+  .ava{ flex:0 0 auto; border-radius:50%; overflow:hidden; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,var(--green),var(--green-dark)); color:#fff; font-weight:800; }
+  .ava img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .ava.sm{ width:46px; height:46px; font-size:17px; }
+  .ava.lg{ width:72px; height:72px; font-size:26px; }
+  /* кнопка-загрузка фото поверх аватарки */
+  .ava-edit{ position:relative; cursor:pointer; }
+  .ava-edit .cam{ position:absolute; right:-2px; bottom:-2px; width:24px; height:24px; border-radius:50%;
+    background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; border:2px solid #fff; }
+  /* мини-афиша в карточке события у координатора */
+  .coord-poster{ width:54px; height:74px; flex:0 0 auto; border-radius:10px; overflow:hidden;
+    background:linear-gradient(135deg,var(--green),var(--green-dark)); display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.5); }
+  .coord-poster img{ width:100%; height:100%; object-fit:cover; }
+  .btn{width:100%; padding:14px 18px; border-radius:12px; font-size:16px; font-weight:700;
+    border:none; background:var(--green); color:#fff; cursor:pointer; font-family:inherit;
+    box-shadow:0 2px 8px rgba(79,175,59,.3)}
+  .btn:disabled{background:#DEE1E3; color:#A6ABB0; cursor:default; box-shadow:none}
+  .btn.ghost{background:transparent; color:var(--ink); border:1.5px solid var(--line); box-shadow:none}
+  .btn.small{width:auto; padding:9px 15px; font-size:14px}
+  .btn.danger{background:transparent; color:var(--red); border:1.5px solid #F3CEC9; box-shadow:none}
+  .btn.danger-outline{background:#fff; color:var(--red); border:1.5px solid var(--red); box-shadow:none}
+  .pill{font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px; white-space:nowrap}
+  .pill.amber{background:var(--amber-soft); color:var(--amber)}
+  .pill.green{background:var(--green-soft); color:var(--green-dark)}
+  .row{display:flex; gap:8px; margin-top:12px}
+  .toggle{flex:1; padding:11px 0; border-radius:12px; font-size:14px; font-weight:700; cursor:pointer;
+    border:1.5px solid var(--line); background:var(--card); color:var(--sub); font-family:inherit}
+  .toggle.on{border-color:var(--green); background:var(--green-soft); color:var(--green-dark)}
+  .stats{display:flex; gap:8px; margin:4px 0 14px}
+  .stat{flex:1; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 6px; text-align:center}
+  .stat b{font-size:22px; font-weight:800; display:block; color:var(--green-dark)}
+  .stat span{font-size:11px; color:var(--sub); font-weight:600}
+  .muted{color:var(--sub); font-size:14px}
+  .center{text-align:center}
+  .filters{display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap}
+  .chip{font-size:13px; font-weight:700; padding:7px 13px; border-radius:999px; cursor:pointer;
+    border:1.5px solid var(--line); background:var(--card); color:var(--sub); font-family:inherit}
+  .chip.active{border-color:var(--green); background:var(--green); color:#fff}
+  .err{color:var(--red); font-size:13px; margin:8px 0}
+  .loading{text-align:center; color:var(--sub); padding:40px}
+  .section-label{font-size:13px; font-weight:700; color:var(--sub); margin:4px 2px 10px}
+
+  /* ---------- АНИМАЦИИ (тонко и быстро) ---------- */
+  @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  @keyframes slideUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pop { 0% { transform:scale(.96); opacity:.6; } 100% { transform:scale(1); opacity:1; } }
+
+  /* контент экрана плавно проявляется */
+  #app > *, #team-zone > * { animation: fadeUp .28s ease both; }
+
+  /* карточки событий — каскадное появление */
+  .egrid .ecard { animation: fadeUp .32s ease both; }
+  .egrid .ecard:nth-child(1){animation-delay:.02s} .egrid .ecard:nth-child(2){animation-delay:.06s}
+  .egrid .ecard:nth-child(3){animation-delay:.10s} .egrid .ecard:nth-child(4){animation-delay:.14s}
+  .egrid .ecard:nth-child(5){animation-delay:.18s} .egrid .ecard:nth-child(6){animation-delay:.22s}
+  .egrid .ecard:nth-child(7){animation-delay:.26s} .egrid .ecard:nth-child(8){animation-delay:.30s}
+
+  /* список карточек (заявки, профиль, пользователи) — мягкое появление */
+  .card { animation: fadeUp .26s ease both; }
+
+  /* страница события — выезд снизу */
+  .evp { animation: slideUp .34s cubic-bezier(.22,.7,.3,1) both; }
+  .reg-card { animation: fadeUp .34s ease .06s both; }
+
+  /* нажатия — лёгкое «вдавливание» */
+  .ecard, .btn, .role-card, .vnav-btn, .chip, .toggle, .icon-btn, .tab { transition: transform .08s ease, opacity .15s ease, background .15s ease, color .15s ease, border-color .15s ease; }
+  .ecard:active, .btn:active, .role-card:active, .vnav-btn:active, .icon-btn:active { transform: scale(.97); }
+
+  /* таб-бар — мягко всплывает при загрузке экрана */
+  .vnav { animation: fadeIn .3s ease both; }
+  .vnav-btn svg { transition: transform .15s ease; }
+  .vnav-btn.on svg { transform: translateY(-1px) scale(1.08); }
+
+  /* пилюли */
+  .pill { animation: pop .25s ease both; }
+
+  /* уважение к системной настройке «меньше движения» */
+  @media (prefers-reduced-motion: reduce){
+    *, #app > *, .egrid .ecard, .card, .evp, .reg-card, .vnav, .pill { animation:none !important; transition:none !important; }
   }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="logo-full" viewBox="0 0 4819 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M938.949 0V261.202C938.949 941.231 470.286 1079.78 470.286 1079.78L469.481 1080L468.683 1079.78C468.683 1079.78 425.406 1066.99 365.168 1030.11C227.135 945.589 0 734.613 0 261.202V0H938.949Z" fill="#164734"/>
+<path d="M938.952 103.455C938.952 190.356 868.5 260.805 781.599 260.807H365.056V469.183H730.17V572.638C730.17 656.104 665.124 724.434 582.933 729.659H365.038V1030.02C226.992 945.45 0.000832656 734.462 0 261.204V0H938.952V103.455Z" fill="#02B140"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M3855.17 250.566C3941 250.566 4009.65 277.32 4064.98 332.741C4120.28 388.163 4147 455.016 4147 537.191C4147 619.366 4120.31 690.05 4064.98 745.472C4009.68 800.893 3941 829.561 3855.17 829.561C3769.35 829.561 3700.7 800.893 3645.37 745.472C3590.06 690.05 3563.34 621.281 3563.34 537.191C3563.34 455.016 3590.03 388.163 3645.37 332.741C3700.67 279.235 3769.35 250.566 3855.17 250.566ZM3855.17 376.702C3811.3 376.702 3775.06 391.994 3746.45 422.548C3717.85 453.101 3704.5 491.346 3704.5 537.191C3704.5 584.952 3717.85 625.082 3746.45 657.581C3775.06 690.05 3811.3 705.342 3855.17 705.342C3899.04 705.342 3935.28 690.05 3963.89 657.581C3992.5 625.082 4005.85 586.867 4005.85 537.191C4005.85 491.346 3992.5 453.131 3963.89 422.548C3935.28 391.964 3899.04 376.702 3855.17 376.702Z" fill="#0E151C"/>
+<path d="M1541.1 380.494H1335.12V497.054H1504.86V615.528H1333.21V821.893H1199.71V262.02H1541.1V380.494Z" fill="#0E151C"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M1813.84 262.02C1863.43 262.02 1899.67 265.85 1922.56 275.396C1954.97 288.773 1979.78 307.866 1998.84 336.534C2017.9 365.203 2025.53 397.672 2025.53 437.802C2025.53 468.385 2017.9 498.939 2004.56 527.607C1989.29 556.276 1970.23 577.283 1943.54 590.66V592.575C1949.25 600.206 1954.97 609.783 1964.52 626.96L2073.23 821.863H1920.65L1821.47 632.705H1756.62V821.863H1619.3V262.02H1813.84ZM1754.71 514.23H1813.84C1836.74 514.23 1853.88 508.485 1865.34 497.023C1878.69 485.562 1884.41 468.355 1884.41 445.432C1884.41 414.849 1872.97 395.756 1852 386.21C1840.57 380.464 1823.39 378.579 1800.5 378.579H1754.71V514.23Z" fill="#0E151C"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M3225.21 262.02C3312.95 262.02 3383.51 286.858 3435.02 336.534C3486.52 386.21 3513.21 453.094 3513.21 540.984C3513.21 628.875 3486.52 697.673 3435.02 747.349C3383.51 797.025 3312.95 821.863 3225.21 821.863H3026.86V262.02H3225.21ZM3166.05 703.389H3164.13L3164.16 703.419H3219.46C3267.14 703.419 3305.29 690.042 3331.98 661.374C3358.68 632.705 3372.02 592.575 3372.02 540.984C3372.02 489.393 3358.68 449.263 3331.98 420.595C3305.29 393.841 3267.13 378.549 3221.35 378.549H3166.05V703.389Z" fill="#0E151C"/>
+<path d="M2481.39 378.579H2269.69V479.847H2439.43V598.321H2269.69V703.419H2492.85V819.977H2132.37V262.02H2481.39V378.579Z" fill="#0E151C"/>
+<path d="M2929.58 378.579H2715.97V479.847H2885.71V598.321H2715.97V703.419H2941.04V819.977H2580.56V262.02H2929.58V378.579Z" fill="#0E151C"/>
+<path d="M4511.49 587.841H4513.37L4624.01 261.087H4818.55V819.044H4681.22V431.023H4679.35L4570.59 729.208H4454.27L4345.51 431.023H4343.63V819.044H4206.31V261.087H4400.85L4511.49 587.841Z" fill="#0E151C"/>
+</svg>
+    <div class="header-sub" id="header-sub">Волонтёры</div>
+  </header>
+  <main id="app"><div class="loading">Загрузка…</div></main>
+</div>
 
-  // всё ниже — только координатор
-  const auth = await checkCoordinator(req);
-  if (!auth.ok) return res.status(401).json({ error: 'Нужен вход координатора' });
+<script>
+const PHONE_KEY = '__vh_phone';
+const VOL_KEY = '__vh_vol';
+const COORD_KEY = '__vh_coord';
+// role: null (выбор) | 'volunteer' | 'coordinator'
+let state = { role:null, events:[], signups:[] };
+// креды координатора { login, pass, master } из sessionStorage
+let coordAuth = (()=>{ try{ return JSON.parse(sessionStorage.getItem(COORD_KEY)||'null'); }catch(_){ return null; } })();
 
-  if (req.method === 'GET') {
-    const signups = await sql`SELECT * FROM signups ORDER BY created_at DESC`;
-    return res.status(200).json({ signups });
+// заголовки авторизации координатора
+function chdr(extra){
+  const h = Object.assign({}, extra||{});
+  if(coordAuth){
+    if(coordAuth.master) h['x-coord-pin'] = coordAuth.pass;
+    else { h['x-coord-login'] = coordAuth.login; h['x-coord-pass'] = coordAuth.pass; }
   }
-
-  if (req.method === 'PATCH') {
-    const b = await readBody(req);
-    if (!b.id) return res.status(400).json({ error: 'Нужен id' });
-    // обновляем только переданные поля
-    if (b.status !== undefined) {
-      await sql`UPDATE signups SET status = ${b.status} WHERE id = ${b.id}`;
-      // при подтверждении — шлём уведомление в Telegram, если волонтёр привязан
-      if (b.status === 'approved') {
-        const rows = await sql`
-          SELECT s.phone, e.title, e.date, e.scan_login, e.scan_pass, v.tg_chat_id, v.name AS vname
-          FROM signups s
-          JOIN events e ON e.id = s.event_id
-          LEFT JOIN volunteers v ON v.phone = s.phone
-          WHERE s.id = ${b.id}`;
-        if (rows.length && rows[0].tg_chat_id) {
-          const r = rows[0];
-          let text = `✅ <b>Запись подтверждена!</b>\n\nСобытие: <b>${r.title}</b>`;
-          if (r.scan_login || r.scan_pass) {
-            text += `\n\n🎫 Доступ к сканеру билетов:\nЛогин: <code>${r.scan_login || '—'}</code>\nПароль: <code>${r.scan_pass || '—'}</code>`;
-          }
-          text += `\n\nБейдж и манишку получишь у координатора на месте.`;
-          await tgSend(r.tg_chat_id, text);
-        }
-      }
-    }
-    if (b.badge !== undefined)
-      await sql`UPDATE signups SET badge = ${b.badge} WHERE id = ${b.id}`;
-    if (b.vest !== undefined)
-      await sql`UPDATE signups SET vest = ${b.vest} WHERE id = ${b.id}`;
-    if (b.name !== undefined)
-      await sql`UPDATE signups SET name = ${b.name} WHERE id = ${b.id}`;
-    if (b.phone !== undefined)
-      await sql`UPDATE signups SET phone = ${b.phone} WHERE id = ${b.id}`;
-    return res.status(200).json({ ok: true });
-  }
-
-  if (req.method === 'DELETE') {
-    const id = req.query.id;
-    if (!id) return res.status(400).json({ error: 'Нужен id' });
-    await sql`DELETE FROM signups WHERE id = ${id}`;
-    return res.status(200).json({ ok: true });
-  }
-
-  res.status(405).json({ error: 'Method not allowed' });
+  return h;
 }
+
+const api = {
+  async events(){ const r = await fetch('/api/events'); return (await r.json()).events||[]; },
+  async eventsCoord(){ const r = await fetch('/api/events',{headers:chdr()}); return (await r.json()).events||[]; },
+  async signup(d){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
+  async eventPeople(eventId){ const r=await fetch('/api/signups?eventId='+encodeURIComponent(eventId)); if(!r.ok) return []; return (await r.json()).people||[]; },
+  async cancelSignup(eventId){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'cancel',phone:me.phone,password:volPass,eventId})}); },
+  async listSignups(){ const r = await fetch('/api/signups',{headers:chdr()}); if(r.status===401) return null; return (await r.json()).signups||[]; },
+  async patch(d){ return fetch('/api/signups',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  async delSignup(id){ return fetch('/api/signups?id='+encodeURIComponent(id),{method:'DELETE',headers:chdr()}); },
+  async addEvent(d){ return fetch('/api/events',{method:'POST',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  async delEvent(id){ return fetch('/api/events?id='+encodeURIComponent(id),{method:'DELETE',headers:chdr()}); },
+  async sync(){ return fetch('/api/sync',{method:'POST',headers:chdr()}); },
+  // волонтёры
+  async vReg(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'register'},d))}); },
+  async vLogin(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'login'},d))}); },
+  async vUpdate(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'update'},d))}); },
+  async tgLink(){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'tglink',phone:me.phone,password:volPass})}); },
+  async listVolunteers(){ const r=await fetch('/api/volunteers',{headers:chdr()}); if(r.status!==200) return []; return (await r.json()).volunteers||[]; },
+  async volProfile(phone){ const r=await fetch('/api/volunteers?phone='+encodeURIComponent(phone),{headers:chdr()}); if(r.status!==200) return null; return r.json(); },
+  async patchVolunteer(d){ return fetch('/api/volunteers',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  async delVolunteer(phone){ return fetch('/api/volunteers?phone='+encodeURIComponent(phone),{method:'DELETE',headers:chdr()}); },
+  // координаторы
+  async coordLogin(d){ return fetch('/api/coordinators',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'login'},d))}); },
+  async coordAdd(d){ return fetch('/api/coordinators',{method:'POST',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(Object.assign({action:'add'},d))}); },
+  async coordList(){ const r=await fetch('/api/coordinators',{headers:chdr()}); if(r.status!==200) return []; return (await r.json()).coordinators||[]; },
+  async coordReset(d){ return fetch('/api/coordinators',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
+  async coordDel(login){ return fetch('/api/coordinators?login='+encodeURIComponent(login),{method:'DELETE',headers:chdr()}); },
+};
+
+const el = document.getElementById('app');
+const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const MO=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const MOF=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const WD=['вс','пн','вт','ср','чт','пт','сб'];
+const WDF=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MO[+m-1]} ${y}`; }
+function fmtDateFull(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MOF[+m-1]}`; }
+function weekday(iso){ if(!iso) return ''; return WDF[new Date(iso).getDay()]; }
+// событие прошло, если его дата+время уже позади. Без времени — конец того дня. Без даты — не прошло.
+function isPast(iso, time){
+  if(!iso) return false;
+  const end = new Date(iso + 'T' + (time && /^\d{2}:\d{2}/.test(time) ? time : '23:59'));
+  return end < new Date();
+}
+function isPastEvent(e){ return isPast(e.date, e.time); }
+
+const headerSub = document.getElementById('header-sub');
+function setHeaderSub(){
+  if(state.role==='coordinator'){ headerSub.textContent = 'Координатор'; }
+  else { headerSub.textContent = ''; }
+}
+
+async function loadEvents(){ state.events = await api.events(); }
+
+// инициалы из имени (для аватарки-заглушки)
+function initials(name){
+  const parts = String(name||'').trim().split(/\s+/).filter(Boolean);
+  if(!parts.length) return '?';
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+// HTML аватарки: фото если есть, иначе инициалы на цветном кружке
+function avaHTML(person, size){
+  const cls = size==='lg' ? 'ava lg' : 'ava sm';
+  if(person && person.avatar){ return `<div class="${cls}"><img src="${esc(person.avatar)}" alt=""></div>`; }
+  return `<div class="${cls}">${esc(initials(person && person.name))}</div>`;
+}
+// выбрать фото с устройства, сжать до 256px квадрата, вернуть data-URL (base64)
+function pickImage(){
+  return new Promise(resolve=>{
+    const inp=document.createElement('input');
+    inp.type='file'; inp.accept='image/*';
+    inp.onchange=()=>{
+      const file=inp.files && inp.files[0];
+      if(!file){ resolve(null); return; }
+      const reader=new FileReader();
+      reader.onload=()=>{
+        const img=new Image();
+        img.onload=()=>{
+          const S=256; const c=document.createElement('canvas'); c.width=S; c.height=S;
+          const ctx=c.getContext('2d');
+          const m=Math.min(img.width,img.height);
+          ctx.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,S,S);
+          resolve(c.toDataURL('image/jpeg',0.8));
+        };
+        img.onerror=()=>resolve(null);
+        img.src=reader.result;
+      };
+      reader.onerror=()=>resolve(null);
+      reader.readAsDataURL(file);
+    };
+    inp.click();
+  });
+}
+
+// событие -> картинка-заглушка или реальная (когда появится поле image)
+function eventImg(e){
+  if(e.image){ return `<img src="${esc(e.image)}" alt="">`; }
+  return `<svg class="ph" width="44" height="44" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M3 16l5-4 4 3 3-2 6 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+// кэш найденных афиш по слагу (на время сессии), чтобы не парсить повторно
+const posterCache = {};
+// достать og:image со страницы события Ticketon по слагу
+async function fetchPoster(slug){
+  if(!slug) return null;
+  if(posterCache[slug] !== undefined) return posterCache[slug];
+  try{
+    const r = await fetch(`https://ticketon.kg/event/${slug}`, { headers:{accept:'text/html'} });
+    if(!r.ok){ posterCache[slug]=null; return null; }
+    const txt = await r.text();
+    const m = txt.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i)
+           || txt.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:image["']/i);
+    const url = m ? m[1] : null;
+    posterCache[slug] = url;
+    return url;
+  }catch(_){ posterCache[slug]=null; return null; }
+}
+// после отрисовки списка — подгрузить афиши в карточки, у которых есть data-slug и нет картинки
+function hydratePosters(root){
+  const scope = root || document;
+  scope.querySelectorAll('[data-poster-slug]').forEach(async box=>{
+    const slug = box.getAttribute('data-poster-slug');
+    if(!slug || box.dataset.posterDone) return;
+    box.dataset.posterDone = '1';
+    const url = await fetchPoster(slug);
+    if(!url) return;
+    // запомним в state, чтобы при перерисовке карточка уже знала картинку
+    const ev = state.events.find(x=>x.slug===slug || x.id===box.getAttribute('data-poster-id'));
+    if(ev) ev.image = url;
+    const img = new Image();
+    img.onload = ()=>{ box.innerHTML = `<img src="${url}" alt="">`; };
+    img.src = url;
+  });
+}
+
+// ---------- VOLUNTEER ----------
+// me: профиль текущего волонтёра {phone,name,birthday} или null
+// vauth: 'login' | 'register' — экран авторизации волонтёра
+let me = null;
+let vol = { eventId:'', view:'list', day:'all', vtab:'events', mySignups:[], vauth:'login', q:'' };
+
+function renderVolunteer(){
+  if(!me){ renderLogin(); return; }
+  if(vol.view==='done'){ renderDone(); return; }
+  if(vol.view==='event'){ renderEventPage(); return; }
+  if(vol.vtab==='profile'){ renderProfile(); return; }
+  renderList();
+}
+
+// нижние вкладки волонтёра: Главная / Достижения / Профиль (с иконками)
+function volNav(){
+  const onHome = vol.vtab==='events' && vol.view!=='event';
+  const onProf = vol.vtab==='profile';
+  const icoHome = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9.5V20h14V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const icoAward = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="9" r="5" stroke="currentColor" stroke-width="1.8"/><path d="M9 13l-1.5 7L12 17l4.5 3L15 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const icoUser = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.6" stroke="currentColor" stroke-width="1.8"/><path d="M5 19c0-3.4 3.1-5.6 7-5.6s7 2.2 7 5.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  return `<div class="vnav">
+    <button class="vnav-btn ${onHome?'on':''}" id="nav-events">${icoHome}<span>Главная</span></button>
+    <button class="vnav-btn" id="nav-awards">${icoAward}<span>Достижения</span></button>
+    <button class="vnav-btn ${onProf?'on':''}" id="nav-profile">${icoUser}<span>Профиль</span></button>
+  </div>`;
+}
+function bindVolNav(){
+  const e=document.getElementById('nav-events'), p=document.getElementById('nav-profile'), a=document.getElementById('nav-awards');
+  if(e) e.onclick=()=>{ vol.vtab='events'; vol.view='list'; render(); };
+  if(p) p.onclick=()=>{ vol.vtab='profile'; vol.view='list'; render(); };
+  if(a) a.onclick=()=>{ showModal('🏆 Достижения', 'Скоро здесь появятся уровни и награды за волонтёрство: бесплатные билеты, мерч, приоритетная запись и не только. Мы ещё придумываем, что туда добавить — следи за обновлениями!'); };
+}
+
+// --- ВХОД / РЕГИСТРАЦИЯ ВОЛОНТЁРА ---
+function renderLogin(){
+  const savedPhone = localStorage.getItem(PHONE_KEY) || '';
+  if(vol.vauth==='register'){
+    el.innerHTML = `<button class="back-btn" id="to-role">‹ Выбор роли</button>
+    <div class="card">
+      <h2 style="margin:0 0 4px;font-size:19px">Регистрация волонтёра</h2>
+      <p class="muted" style="margin:0 0 16px">Заполни профиль один раз. Телефон будет твоим логином.</p>
+      <label><span>Имя и фамилия</span><input id="rg-name" placeholder="Айгуль Асанова"></label>
+      <label><span>Телефон</span><input id="rg-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(savedPhone)}"></label>
+      <label><span>Дата рождения</span><input id="rg-bday" type="date"></label>
+      <label><span>Пароль</span><input id="rg-pass" type="password" placeholder="придумай пароль"></label>
+      <div class="err" id="rg-err" style="display:none"></div>
+      <button class="btn" id="rg-go">Зарегистрироваться</button>
+      <button class="btn ghost" id="to-login" style="margin-top:8px">У меня уже есть аккаунт</button>
+    </div>`;
+    document.getElementById('to-role').onclick=()=>{ state.role=null; render(); };
+    document.getElementById('to-login').onclick=()=>{ vol.vauth='login'; render(); };
+    document.getElementById('rg-go').onclick=async()=>{
+      const name=document.getElementById('rg-name').value.trim();
+      const phone=document.getElementById('rg-phone').value.trim();
+      const bday=document.getElementById('rg-bday').value;
+      const password=document.getElementById('rg-pass').value;
+      if(!name||!phone||!password){ showErr('rg-err','Заполни имя, телефон и пароль'); return; }
+      const r=await api.vReg({name,phone,birthday:bday||null,password});
+      const data=await r.json();
+      if(!r.ok){ showErr('rg-err', data.error||'Не получилось зарегистрироваться'); return; }
+      localStorage.setItem(PHONE_KEY, phone); volPass=password; localStorage.setItem(VOL_KEY, JSON.stringify({phone,pass:password}));
+      me=data.profile; vol.mySignups=data.signups||[];
+      vol.vtab='events'; vol.view='list'; render();
+    };
+    return;
+  }
+  // вход
+  el.innerHTML = `<button class="back-btn" id="to-role">‹ Выбор роли</button>
+  <div class="card">
+    <h2 style="margin:0 0 4px;font-size:19px">Вход волонтёра</h2>
+    <p class="muted" style="margin:0 0 16px">Войди по телефону и паролю.</p>
+    <label><span>Телефон</span><input id="lg-phone" inputmode="tel" placeholder="+996 700 000 000" value="${esc(savedPhone)}"></label>
+    <label><span>Пароль</span><input id="lg-pass" type="password" placeholder="пароль"></label>
+    <div class="err" id="lg-err" style="display:none"></div>
+    <button class="btn" id="lg-go">Войти</button>
+    <button class="btn ghost" id="to-reg" style="margin-top:8px">Я впервые — зарегистрироваться</button>
+    <p class="muted" style="margin:12px 0 0;font-size:13px">Забыл пароль? Сообщи координатору — он сбросит.</p>
+  </div>`;
+  document.getElementById('to-role').onclick=()=>{ state.role=null; render(); };
+  document.getElementById('to-reg').onclick=()=>{ vol.vauth='register'; render(); };
+  document.getElementById('lg-go').onclick=async()=>{
+    const phone=document.getElementById('lg-phone').value.trim();
+    const password=document.getElementById('lg-pass').value;
+    if(!phone||!password){ showErr('lg-err','Введи телефон и пароль'); return; }
+    const r=await api.vLogin({phone,password});
+    const data=await r.json();
+    if(!r.ok){ showErr('lg-err', data.error||'Неверный телефон или пароль'); return; }
+    localStorage.setItem(PHONE_KEY, phone); volPass=password; localStorage.setItem(VOL_KEY, JSON.stringify({phone,pass:password}));
+    me=data.profile; vol.mySignups=data.signups||[];
+    vol.vtab='events'; vol.view='list'; render();
+  };
+}
+
+// --- СПИСОК СОБЫТИЙ ---
+function eventCardHTML(e, signedIds){
+  const mine=signedIds.has(e.id);
+  return `<button class="ecard" data-id="${esc(e.id)}">
+    <div class="img"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}</div>
+    <div class="body">
+      <div class="ttl">${esc(e.title)}</div>
+      ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
+      ${mine?'<span class="meta-place" style="background:var(--green-soft);color:var(--green-dark)">✓ Вы записаны</span>':(e.place?`<span class="meta-place">${esc(e.place)}</span>`:'')}
+    </div>
+  </button>`;
+}
+function renderList(){
+  // на главной показываем только актуальные (прошедшие скрываем)
+  const upcoming = state.events.filter(e=> !isPastEvent(e));
+  const dates = [...new Set(upcoming.map(e=>e.date).filter(Boolean))].sort();
+  // подписи месяцев над лентой (по уникальным месяцам в датах)
+  let monthsHtml = '';
+  const months = [...new Set(dates.map(d=>+d.split('-')[1]))];
+  if(months.length){ monthsHtml = `<div class="cal-months">${months.map(m=>MOF[m-1][0].toUpperCase()+MOF[m-1].slice(1)).join('&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')}</div>`; }
+  let calHtml = '';
+  if(dates.length){
+    calHtml = monthsHtml + `<div class="cal">
+      <div class="cal-day alldays ${vol.day==='all'?'active':''}" data-day="all"><span class="dn">Все</span></div>` +
+      dates.map(d=>{
+        const [y,m,day]=d.split('-'); const wd=WD[new Date(d).getDay()];
+        return `<div class="cal-day ${vol.day===d?'active':''}" data-day="${d}">
+          <div class="dn">${+day}</div><div class="wd">${wd}</div></div>`;
+      }).join('') + `</div>`;
+  }
+  const q = (vol.q||'').trim().toLowerCase();
+  let shown = upcoming.filter(e=> vol.day==='all' || e.date===vol.day);
+  if(q) shown = shown.filter(e=> (e.title||'').toLowerCase().includes(q) || (e.place||'').toLowerCase().includes(q));
+  const signedIds = new Set(vol.mySignups.map(s=>s.event_id));
+  const evCards = shown.map(e=>eventCardHTML(e, signedIds)).join('');
+
+  el.innerHTML = `<h1 class="page-title">Все события</h1>` + calHtml +
+    `<div class="search-wrap"><input id="ev-search" class="search" placeholder="Поиск события…" value="${esc(vol.q)}"></div>
+    <div class="egrid">${shown.length?evCards:'<div class="card center muted" style="grid-column:1/-1">Пока нет предстоящих событий.</div>'}</div>` + volNav();
+
+  const si=document.getElementById('ev-search');
+  if(si) si.oninput=e=>{ vol.q=e.target.value; const grid=document.querySelector('.egrid');
+    const qq=(vol.q||'').trim().toLowerCase();
+    let f=upcoming.filter(x=> vol.day==='all'||x.date===vol.day);
+    if(qq) f=f.filter(x=>(x.title||'').toLowerCase().includes(qq)||(x.place||'').toLowerCase().includes(qq));
+    grid.innerHTML = f.length? f.map(ev=>eventCardHTML(ev, signedIds)).join('') : '<div class="card center muted" style="grid-column:1/-1">Ничего не найдено.</div>';
+    grid.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
+    hydratePosters(grid);
+  };
+  document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
+  document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
+  bindVolNav();
+  hydratePosters(el);
+}
+
+// --- СТРАНИЦА СОБЫТИЯ ---
+function renderEventPage(){
+  const e = state.events.find(x=>x.id===vol.eventId);
+  if(!e){ vol.view='list'; renderList(); return; }
+  const taken=+e.taken||0, full=taken>=e.need;
+  const approved=+e.approved_count||0;
+  const already = vol.mySignups.find(s=>s.event_id===e.id);
+
+  el.innerHTML = `
+    <button class="back-btn" id="back">‹ Назад к событиям</button>
+    <div class="evp">
+      <div class="evp-poster"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}${e.category?`<span class="evp-cat">${esc(e.category)}</span>`:''}</div>
+      <h1 class="evp-ttl">${esc(e.title)}</h1>
+      ${already
+        ? `<button class="btn danger-outline" id="v-cancel" style="margin:4px 0 8px">Отменить запись</button>
+           <div class="evp-note">Вы записаны · статус: <b>${already.status==='approved'?'подтверждён':'ждёт подтверждения'}</b></div>`
+        : `<button class="btn" id="v-submit" ${full?'disabled':''} style="margin:4px 0 8px">${full?'Мест больше нет':'Записаться волонтёром'}</button>
+           <div class="evp-note">Запишем как <b>${esc(me.name)}</b> (${esc(me.phone)})</div>
+           <div class="err" id="v-err" style="display:none;margin-top:8px"></div>`}
+      <div class="evp-info">
+        ${e.date?`<div class="evp-line"><span class="evp-ico">📅</span><div>${fmtDateFull(e.date)}, ${weekday(e.date)}${e.time?` · ${esc(e.time)}`:''}</div></div>`:''}
+        ${e.place?`<div class="evp-line"><span class="evp-ico">📍</span><div>${esc(e.place)}${e.address&&e.address!==e.place?`<div class="muted" style="font-weight:400;font-size:14px;margin-top:2px">${esc(e.address)}</div>`:''}</div></div>`:''}
+        <div class="evp-line"><span class="evp-ico">🙌</span><div>${full?'Мест нет':`Волонтёры: записано ${approved} из ${e.need}`}</div></div>
+      </div>
+      ${(e.address||e.place)?`<a class="btn ghost" id="v-map" href="https://2gis.kg/bishkek/search/${encodeURIComponent(e.address||e.place)}" target="_blank" rel="noopener" style="margin-top:10px;display:block;text-align:center;text-decoration:none">📍 Открыть в 2ГИС</a>`:''}
+      ${e.slug?`<a class="btn ghost" href="https://ticketon.kg/event/${esc(e.slug)}" target="_blank" rel="noopener" style="margin-top:10px;display:block;text-align:center;text-decoration:none">🎟 Подробнее на Ticketon</a>`:''}
+      <div id="evp-people" style="margin-top:18px"></div>
+    </div>`;
+
+  document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
+  hydratePosters(el);
+  // подгрузка списка записавшихся (аватарки/инициалы)
+  api.eventPeople(e.id).then(people=>{
+    const box=document.getElementById('evp-people');
+    if(!box) return;
+    if(!people.length){ box.innerHTML=''; return; }
+    const chips = people.map(p=>`
+      <div class="evp-person" title="${esc(p.name)}${p.approved?' · подтверждён':' · ждёт'}">
+        ${avaHTML(p)}
+        <span class="evp-person-name">${esc((p.name||'').split(/\s+/)[0])}</span>
+        ${p.approved?'<span class="evp-person-ok">✓</span>':''}
+      </div>`).join('');
+    box.innerHTML = `<div class="section-label">Уже записались (${people.length}):</div><div class="evp-people-row">${chips}</div>`;
+  });
+  const sub=document.getElementById('v-submit');
+  if(sub) sub.onclick=async()=>{
+    if(sub.disabled) return;
+    sub.disabled=true; sub.textContent='Записываю…';
+    try{ if('Notification' in window && Notification.permission==='default'){ await Notification.requestPermission(); } }catch(_){}
+    try{
+      const r = await api.signup({name:me.name,phone:me.phone,eventId:vol.eventId});
+      if(r.ok){ await refreshMine(); vol.view='done'; await loadEvents(); render(); }
+      else { showErr('v-err','Не получилось отправить. Попробуй ещё раз.'); sub.disabled=false; sub.textContent='Записаться'; }
+    }catch(_){ showErr('v-err','Ошибка сети. Попробуй ещё раз.'); sub.disabled=false; sub.textContent='Записаться'; }
+  };
+  const cancel=document.getElementById('v-cancel');
+  if(cancel) cancel.onclick=async()=>{
+    if(cancel.disabled) return;
+    if(!confirm('Отменить запись на это событие?')) return;
+    cancel.disabled=true; cancel.textContent='Отменяю…';
+    try{
+      const r=await api.cancelSignup(vol.eventId);
+      if(r.ok){ await refreshMine(); await loadEvents(); vol.view='list'; render(); }
+      else { cancel.disabled=false; cancel.textContent='Отменить запись'; }
+    }catch(_){ cancel.disabled=false; cancel.textContent='Отменить запись'; }
+  };
+}
+
+// обновить свои записи (пароль держим в памяти на время сессии)
+let volPass = null;
+async function refreshMine(){
+  if(!me || !volPass) return;
+  const r=await api.vLogin({phone:me.phone,password:volPass});
+  if(r.ok){ const data=await r.json(); vol.mySignups=data.signups||[]; me=data.profile; }
+}
+
+// --- УСПЕХ ---
+function renderDone(){
+  const ev = state.events.find(e=>e.id===vol.eventId);
+  el.innerHTML = `<div class="card center" style="margin-top:20px">
+    <div style="font-size:44px;margin-bottom:6px">🎉</div>
+    <h2 style="margin:0 0 6px;font-size:19px">Заявка отправлена</h2>
+    <p class="muted">${esc(me.name)}, вы записаны на <b style="color:var(--ink)">${esc(ev?ev.title:'')}</b>.</p>
+    <p class="muted">Координатор подтвердит участие. После подтверждения в профиле появятся логин и пароль для сканера билетов.</p>
+    ${!me.tg_linked?`<div class="scan-box" style="text-align:left;margin-top:14px">
+      <div style="font-weight:800;margin-bottom:4px">🔔 Подключи Telegram</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Чтобы не пропустить подтверждение и сразу получить доступ к сканеру — привяжи Telegram. Уведомления придут прямо в мессенджер.</div>
+      <button class="btn small" id="done-tg">Привязать Telegram</button>
+    </div>`:''}
+    <button class="btn ghost" id="again" style="margin-top:12px">К списку событий</button>
+  </div>`;
+  document.getElementById('again').onclick=()=>{ vol.view='list'; vol.vtab='events'; render(); };
+  const dtg=document.getElementById('done-tg');
+  if(dtg) dtg.onclick=async()=>{
+    dtg.disabled=true; dtg.textContent='Подождите…';
+    const r=await api.tgLink(); const d=await r.json();
+    if(r.ok && d.link){ window.open(d.link,'_blank'); dtg.textContent='Открыть бота'; dtg.disabled=false; dtg.onclick=()=>window.open(d.link,'_blank'); }
+    else { dtg.disabled=false; dtg.textContent='Привязать Telegram'; }
+  };
+}
+
+// --- ПРОФИЛЬ ВОЛОНТЁРА ---
+function renderProfile(){
+  const signupCard = (s, past)=>{
+    const appr = s.status==='approved';
+    return `<div class="card"${past?' style="opacity:.55"':''}>
+      <div style="font-weight:800;font-size:16px">${esc(s.title)}</div>
+      <div class="muted" style="margin-top:2px">${s.date?fmtDateFull(s.date)+', '+weekday(s.date):''}${s.place?' · '+esc(s.place):''}</div>
+      <div style="margin-top:8px"><span class="pill ${past?'amber':(appr?'green':'amber')}">${past?'Завершено':(appr?'Подтверждён':'Ждёт подтверждения')}</span></div>
+      ${!past && appr && (s.scan_login||s.scan_pass) ? `<div class="scan-box">
+        <div class="scan-ttl">Доступ к сканеру билетов</div>
+        <div class="scan-row"><span>Логин</span><b>${esc(s.scan_login||'—')}</b></div>
+        <div class="scan-row"><span>Пароль</span><b>${esc(s.scan_pass||'—')}</b></div>
+      </div>` : (!past && appr?'<div class="muted" style="margin-top:8px;font-size:13px">Доступ к сканеру координатор добавит позже.</div>':'')}
+      ${past?'':`<button class="btn danger-outline small" data-cancel="${esc(s.event_id)}" style="margin-top:12px">Отменить запись</button>`}
+    </div>`;
+  };
+  // определяем прошедшие по данным события (дата+время)
+  const evById = {}; state.events.forEach(e=>evById[e.id]=e);
+  const isPastSignup = s=>{ const e=evById[s.event_id]; return e?isPastEvent(e):isPast(s.date, s.time); };
+  const active = vol.mySignups.filter(s=>!isPastSignup(s));
+  const passed = vol.mySignups.filter(s=>isPastSignup(s));
+  const cards = active.map(s=>signupCard(s,false)).join('') +
+    (passed.length?`<div class="section-label" style="margin-top:8px">Прошедшие:</div>${passed.map(s=>signupCard(s,true)).join('')}`:'');
+
+  el.innerHTML = `
+    <div class="card" style="margin-top:8px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div class="ava-edit" id="my-ava-wrap">${avaHTML(me,'lg')}<span class="cam">📷</span></div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:18px">${esc(me.name)}</div>
+          <div class="muted" style="margin-top:2px">${esc(me.phone)}</div>
+          ${me.birthday?`<div class="muted" style="margin-top:2px">День рождения: ${fmtDateFull(me.birthday)}</div>`:''}
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn ghost small" id="my-edit" style="flex:1">Редактировать</button>
+        <button class="btn ghost small" id="logout" style="flex:1">Выйти</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-weight:800;font-size:15px;margin-bottom:4px">🔔 Уведомления в Telegram</div>
+      ${me.tg_linked
+        ? '<div class="muted" style="font-size:13px">Telegram привязан ✓ Подтверждение записи и доступ к сканеру придут в бота.</div>'
+        : '<div class="muted" style="font-size:13px;margin-bottom:10px">Привяжи Telegram, чтобы получать подтверждение записи и доступ к сканеру прямо в мессенджере.</div><button class="btn small" id="tg-link">Привязать Telegram</button>'}
+      <div class="err" id="tg-err" style="display:none;margin-top:8px"></div>
+    </div>
+    <div class="section-label">Мои записи:</div>
+    ${vol.mySignups.length?cards:'<div class="card center muted">Вы ещё никуда не записались.</div>'}` + volNav();
+
+  document.getElementById('logout').onclick=()=>{ me=null; volPass=null; localStorage.removeItem(VOL_KEY); vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
+  // загрузка своей аватарки
+  const avaWrap=document.getElementById('my-ava-wrap');
+  if(avaWrap) avaWrap.onclick=async()=>{
+    const img=await pickImage(); if(!img) return;
+    const r=await api.vUpdate({phone:me.phone, password:volPass, avatar:img});
+    if(r.ok){ const d=await r.json(); me=d.profile; render(); }
+  };
+  // форма редактирования своего профиля
+  const editBtn=document.getElementById('my-edit');
+  if(editBtn) editBtn.onclick=()=>{
+    showModalForm('Редактирование профиля', `
+      <label><span>Имя и фамилия</span><input id="me-name" value="${esc(me.name)}"></label>
+      <label><span>Дата рождения</span><input id="me-bday" type="date" value="${esc(me.birthday||'')}"></label>
+      <label><span>Новый пароль (необязательно)</span><input id="me-pass" type="password" placeholder="оставьте пустым, чтобы не менять"></label>
+    `, async ()=>{
+      const name=document.getElementById('me-name').value.trim();
+      const bday=document.getElementById('me-bday').value;
+      const np=document.getElementById('me-pass').value;
+      if(!name) return false;
+      const payload={phone:me.phone, password:volPass, name, birthday:bday||null};
+      if(np) payload.newPassword=np;
+      const r=await api.vUpdate(payload);
+      if(r.ok){ const d=await r.json(); me=d.profile; if(np) volPass=np;
+        // обновим сохранённую сессию, если пароль сменился
+        try{ const s=JSON.parse(localStorage.getItem(VOL_KEY)||'null'); if(s){ s.pass=volPass; localStorage.setItem(VOL_KEY, JSON.stringify(s)); } }catch(_){}
+        render(); return true; }
+      return false;
+    });
+  };
+  const tg=document.getElementById('tg-link');
+  if(tg) tg.onclick=async()=>{
+    tg.disabled=true; tg.textContent='Подождите…';
+    const r=await api.tgLink(); const d=await r.json();
+    if(r.ok && d.link){ window.open(d.link,'_blank'); tg.textContent='Открыть бота'; tg.disabled=false; tg.onclick=()=>window.open(d.link,'_blank'); }
+    else if(r.ok && d.code){ showErr('tg-err','Найди бота в Telegram и отправь: /start '+d.code); tg.disabled=false; tg.textContent='Привязать Telegram'; }
+    else { showErr('tg-err','Не получилось. Попробуй позже.'); tg.disabled=false; tg.textContent='Привязать Telegram'; }
+  };
+  document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{
+    if(b.disabled) return;
+    if(!confirm('Отменить запись на это событие?')) return;
+    b.disabled=true; b.textContent='Отменяю…';
+    const r=await api.cancelSignup(b.dataset.cancel);
+    if(r.ok){ await refreshMine(); await loadEvents(); render(); }
+    else { b.disabled=false; b.textContent='Отменить запись'; }
+  });
+  bindVolNav();
+}
+function showErr(id,msg){ const e=document.getElementById(id); if(e){e.textContent=msg;e.style.display='block';} }
+function showModal(title, text, btnText){
+  document.getElementById('modal-bg')?.remove();
+  const bg=document.createElement('div'); bg.id='modal-bg'; bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal"><div class="modal-ttl">${title}</div><div class="modal-text">${text}</div><button class="btn" id="modal-ok">${btnText||'Понятно'}</button></div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelector('#modal-ok').onclick=close;
+  bg.onclick=e=>{ if(e.target===bg) close(); };
+}
+// модалка с произвольной формой; onSave() возвращает true чтобы закрыть, false — оставить открытой
+function showModalForm(title, innerHTML, onSave){
+  document.getElementById('modal-bg')?.remove();
+  const bg=document.createElement('div'); bg.id='modal-bg'; bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal" style="text-align:left">
+    <div class="modal-ttl" style="text-align:center">${title}</div>
+    <div style="margin:14px 0">${innerHTML}</div>
+    <div class="err" id="modal-err" style="display:none;margin-bottom:10px"></div>
+    <div class="row"><button class="btn" id="modal-save">Сохранить</button>
+    <button class="btn ghost" id="modal-cancel">Отмена</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelector('#modal-cancel').onclick=close;
+  bg.onclick=e=>{ if(e.target===bg) close(); };
+  bg.querySelector('#modal-save').onclick=async()=>{
+    const btn=bg.querySelector('#modal-save'); btn.disabled=true; btn.textContent='Сохраняю…';
+    const ok=await onSave();
+    if(ok){ close(); } else { btn.disabled=false; btn.textContent='Сохранить';
+      const e=bg.querySelector('#modal-err'); e.textContent='Проверьте поля и попробуйте снова'; e.style.display='block'; }
+  };
+}
+
+// ---------- COORDINATOR ----------
+let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null, q:'', limit:20, teamTab:'volunteers', teamQ:'', viewUser:null, showAddEvent:false };
+function renderCoordinator(){
+  if(!coordAuth){ renderCoordLogin(); return; }
+  el.innerHTML = `<div class="loading">Загрузка…</div>`;
+  api.listSignups().then(async list=>{
+    if(list===null){ coordAuth=null; sessionStorage.removeItem(COORD_KEY); renderCoordLogin('Сессия истекла, войдите снова'); return; }
+    state.signups = list; state.events = await api.eventsCoord(); drawCoordinator();
+  });
+}
+function renderCoordLogin(errMsg){
+  el.innerHTML = `<button class="back-btn" id="to-role">‹ Выбор роли</button>
+  <div class="card" style="max-width:360px;margin:0 auto">
+    <h2 style="margin:0 0 4px;font-size:18px">Вход координатора</h2>
+    <p class="muted" style="margin:0 0 16px">Введите логин и пароль.</p>
+    <label><span>Логин</span><input id="cl-login" placeholder="логин"></label>
+    <label><span>Пароль</span><input id="cl-pass" type="password" placeholder="пароль"></label>
+    ${errMsg?`<div class="err">${esc(errMsg)}</div>`:''}
+    <button class="btn" id="cl-go">Войти</button>
+  </div>`;
+  document.getElementById('to-role').onclick=()=>{ state.role=null; render(); };
+  const go=async()=>{
+    const login=document.getElementById('cl-login').value.trim();
+    const pass=document.getElementById('cl-pass').value;
+    if(!login||!pass){ renderCoordLogin('Введите логин и пароль'); return; }
+    const r=await api.coordLogin({login,password:pass});
+    const data=await r.json();
+    if(!r.ok){ renderCoordLogin(data.error||'Неверный логин или пароль'); return; }
+    coordAuth={ login:data.login, pass, master:!!data.master, name:data.name };
+    sessionStorage.setItem(COORD_KEY, JSON.stringify(coordAuth));
+    state.signups=await api.listSignups(); state.events=await api.eventsCoord(); drawCoordinator();
+  };
+  document.getElementById('cl-go').onclick=go;
+  document.getElementById('cl-pass').onkeydown=e=>{ if(e.key==='Enter') go(); };
+}
+function drawCoordinator(){
+  const s = state.signups;
+  const evTitle = id => { const e=state.events.find(x=>x.id===id); return e?e.title:'—'; };
+  const active = s.filter(x=>x.status!=='rejected');
+  const stats = `<div class="stats">
+    <div class="stat"><b>${active.length}</b><span>всего</span></div>
+    <div class="stat"><b style="color:var(--amber)">${s.filter(x=>x.status==='pending').length}</b><span>ждут</span></div>
+    <div class="stat"><b>${s.filter(x=>x.badge).length}</b><span>бейджей</span></div>
+    <div class="stat"><b>${s.filter(x=>x.vest).length}</b><span>манишек</span></div>
+  </div>`;
+  const subtabs = `<div class="row" style="margin-top:0;margin-bottom:12px;flex-wrap:wrap">
+    <button class="tab ${coord.tab==='people'?'active':''}" id="ct-people">Заявки</button>
+    <button class="tab ${coord.tab==='events'?'active':''}" id="ct-events">События</button>
+    <button class="tab ${coord.tab==='team'?'active':''}" id="ct-team">Пользователи</button>
+    <button class="tab" id="ct-out" style="flex:0 0 auto;padding:11px 14px;background:#E7E9EB;color:var(--sub)">Выйти</button>
+  </div>`;
+
+  if(coord.tab==='people'){
+    const q=(coord.q||'').trim().toLowerCase();
+    // карта событий — чтобы прятать заявки прошедших
+    const evMap={}; state.events.forEach(e=>evMap[e.id]=e);
+    const eventPast = id=>{ const e=evMap[id]; return e?isPastEvent(e):false; };
+    let visible = s.filter(x=> (coord.filter==='all'? x.status!=='rejected' : x.status===coord.filter) && !eventPast(x.event_id));
+    if(q) visible = visible.filter(x=> (x.name||'').toLowerCase().includes(q) || (x.phone||'').toLowerCase().includes(q));
+    const total = visible.length;
+    const page = visible.slice(0, coord.limit);
+    const cards = page.map(x=>{
+      const pending = x.status==='pending';
+      if(coord.editingVol===x.id){
+        return `<div class="card">
+          <label><span>Имя и фамилия</span><input id="ev-name" value="${esc(x.name)}"></label>
+          <label><span>Телефон</span><input id="ev-phone" value="${esc(x.phone)}"></label>
+          <div class="row">
+            <button class="btn small" data-vsave="${x.id}" data-vphone="${esc(x.phone)}">Сохранить</button>
+            <button class="btn small ghost" data-vcancel="1">Отмена</button>
+          </div>
+        </div>`;
+      }
+      return `<div class="card">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <div><div style="font-weight:800;font-size:16px">${esc(x.name)}</div>
+            <div class="muted">${esc(x.phone)}</div>
+            <div class="muted" style="margin-top:2px">${esc(evTitle(x.event_id))}</div></div>
+          <span class="pill ${pending?'amber':'green'}">${pending?'Ждёт':'Подтверждён'}</span>
+        </div>
+        ${pending?`<div class="row">
+            <button class="btn small" data-act="approve" data-id="${x.id}">Подтвердить</button>
+            <button class="btn small ghost" data-vedit="${x.id}">Изменить</button>
+            <button class="btn small danger" data-act="del" data-id="${x.id}">Удалить</button></div>`
+          :`<div class="row">
+            <button class="toggle ${x.badge?'on':''}" data-act="badge" data-id="${x.id}">${x.badge?'✓ ':''}Бейдж</button>
+            <button class="toggle ${x.vest?'on':''}" data-act="vest" data-id="${x.id}">${x.vest?'✓ ':''}Манишка</button></div>
+          <div class="row"><button class="btn small ghost" data-vedit="${x.id}">Изменить данные</button>
+            <button class="btn small danger" data-act="del" data-id="${x.id}">Удалить</button></div>`}
+      </div>`;
+    }).join('');
+    const moreBtn = total>coord.limit ? `<button class="btn ghost" id="more-people">Показать ещё (${total-coord.limit})</button>` : '';
+    el.innerHTML = stats + subtabs +
+      `<div class="search-wrap"><input id="p-search" class="search" placeholder="Поиск по имени или телефону…" value="${esc(coord.q)}"></div>
+      <div class="filters">
+      <button class="chip ${coord.filter==='all'?'active':''}" data-f="all">Все</button>
+      <button class="chip ${coord.filter==='pending'?'active':''}" data-f="pending">Ждут</button>
+      <button class="chip ${coord.filter==='approved'?'active':''}" data-f="approved">Подтверждены</button>
+    </div>` + (total?cards:'<div class="card center muted">Никого не найдено.</div>') + moreBtn;
+    const ps=document.getElementById('p-search');
+    if(ps) ps.oninput=e=>{ coord.q=e.target.value; coord.limit=20; drawCoordinator(); setTimeout(()=>{const n=document.getElementById('p-search'); if(n){n.focus(); n.setSelectionRange(n.value.length,n.value.length);}},0); };
+    const mb=document.getElementById('more-people'); if(mb) mb.onclick=()=>{ coord.limit+=20; drawCoordinator(); };
+    document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{ coord.filter=c.dataset.f; coord.limit=20; drawCoordinator(); });
+    document.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.id, act=b.dataset.act;
+      if(act==='approve') await api.patch({id,status:'approved'});
+      if(act==='del') await api.delSignup(id);
+      if(act==='badge'){ const cur=state.signups.find(x=>x.id===id); await api.patch({id,badge:!cur.badge}); }
+      if(act==='vest'){ const cur=state.signups.find(x=>x.id===id); await api.patch({id,vest:!cur.vest}); }
+      state.signups = await api.listSignups(); drawCoordinator();
+    });
+    document.querySelectorAll('[data-vedit]').forEach(b=>b.onclick=()=>{ coord.editingVol=b.dataset.vedit; drawCoordinator(); });
+    document.querySelectorAll('[data-vcancel]').forEach(b=>b.onclick=()=>{ coord.editingVol=null; drawCoordinator(); });
+    document.querySelectorAll('[data-vsave]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.vsave, oldPhone=b.dataset.vphone;
+      const name=document.getElementById('ev-name').value.trim();
+      const phone=document.getElementById('ev-phone').value.trim();
+      if(!name||!phone){ return; }
+      // обновим заявку
+      await api.patch({id,name,phone});
+      // и профиль волонтёра (по старому телефону правим имя/телефон)
+      await api.patchVolunteer({phone:oldPhone,name});
+      coord.editingVol=null; state.signups=await api.listSignups(); drawCoordinator();
+    });
+  } else if(coord.tab==='events') {
+    const evCardCoord = (e)=>{
+      if (coord.editing === e.id) {
+        return `<div class="card">
+          <label><span>Название</span><input id="ed-title" value="${esc(e.title)}"></label>
+          <label><span>Дата</span><input id="ed-date" type="date" value="${esc(e.date||'')}"></label>
+          <label><span>Время</span><input id="ed-time" type="time" value="${esc(e.time||'')}"></label>
+          <label><span>Место</span><input id="ed-place" value="${esc(e.place||'')}" placeholder="Адрес или площадка"></label>
+          <label><span>Сколько волонтёров нужно</span><input id="ed-need" type="number" inputmode="numeric" value="${e.need}"></label>
+          <label><span>Логин сканера билетов</span><input id="ed-slogin" value="${esc(e.scan_login||'')}" placeholder="логин для приложения-сканера"></label>
+          <label><span>Пароль сканера билетов</span><input id="ed-spass" value="${esc(e.scan_pass||'')}" placeholder="пароль для приложения-сканера"></label>
+          <div class="row">
+            <button class="btn small" data-save="${esc(e.id)}">Сохранить</button>
+            <button class="btn small ghost" data-cancel="1">Отмена</button>
+          </div>
+        </div>`;
+      }
+      const hasScan = e.scan_login||e.scan_pass;
+      const past = isPastEvent(e);
+      return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px${past?';opacity:.6':''}">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <div class="coord-poster"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}</div>
+        <div style="min-width:0"><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
+        <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div>
+        ${hasScan?'<div class="muted" style="margin-top:2px;font-size:12px">🔑 сканер задан</div>':''}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex:0 0 auto">
+        <button class="btn small ghost" data-edit="${esc(e.id)}">Изменить</button>
+        <button class="btn small danger" data-del="${esc(e.id)}">Удалить</button>
+      </div></div>`;
+    };
+    const sortByDate = (a,b)=> (a.date||'').localeCompare(b.date||'');
+    const upcoming = state.events.filter(e=>!isPastEvent(e)).sort(sortByDate);
+    const past = state.events.filter(e=>isPastEvent(e)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    const evs = `
+      <div class="section-label">Предстоящие (${upcoming.length}):</div>
+      ${upcoming.length?upcoming.map(evCardCoord).join(''):'<div class="card center muted">Нет предстоящих событий.</div>'}
+      ${past.length?`<div class="section-label" style="margin-top:8px">Прошедшие (${past.length}):</div>${past.map(evCardCoord).join('')}`:''}`;
+    el.innerHTML = stats + subtabs + `
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn ghost" id="sync" style="flex:1">Обновить события</button>
+        <button class="btn" id="toggle-add" style="flex:1">${coord.showAddEvent?'✕ Закрыть':'+ Добавить событие'}</button>
+      </div>
+      <div class="err" id="sync-msg" style="display:none"></div>
+      <div class="card" id="add-event-form" style="display:${coord.showAddEvent?'block':'none'}"><h3 style="margin:0 0 12px;font-size:16px">Новое событие</h3>
+        <label><span>Название</span><input id="e-title" placeholder="Концерт, спектакль…"></label>
+        <label><span>Дата</span><input id="e-date" type="date"></label>
+        <label><span>Время (необязательно)</span><input id="e-time" type="time"></label>
+        <label><span>Место</span><input id="e-place" placeholder="Адрес или площадка"></label>
+        <label><span>Сколько волонтёров нужно</span><input id="e-need" type="number" inputmode="numeric" value="4"></label>
+        <label><span>Логин сканера билетов (необязательно)</span><input id="e-slogin" placeholder="логин для приложения-сканера"></label>
+        <label><span>Пароль сканера билетов (необязательно)</span><input id="e-spass" placeholder="пароль для приложения-сканера"></label>
+        <button class="btn" id="e-add">Добавить событие</button>
+      </div>
+      ${evs}`;
+    document.getElementById('toggle-add').onclick=()=>{ coord.showAddEvent=!coord.showAddEvent; drawCoordinator(); };
+    document.getElementById('sync').onclick=async()=>{
+      const btn=document.getElementById('sync'); btn.disabled=true; btn.textContent='Обновляю…';
+      const before=state.events.length;
+      state.events=await api.eventsCoord();
+      const after=state.events.length;
+      const diff=after-before;
+      const msg = diff>0 ? `Добавлено новых: ${diff}. Всего на афише: ${after}.`
+                : `Все события уже загружены. Всего на афише: ${after}.`;
+      showModal('Готово', msg, 'Понятно');
+      drawCoordinator();
+    };
+    document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ await api.delEvent(b.dataset.del); state.events=await api.eventsCoord(); drawCoordinator(); });
+    document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ coord.editing=b.dataset.edit; drawCoordinator(); });
+    document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>{ coord.editing=null; drawCoordinator(); });
+    document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.save;
+      const title=document.getElementById('ed-title').value.trim();
+      const date=document.getElementById('ed-date').value;
+      const time=document.getElementById('ed-time').value;
+      const place=document.getElementById('ed-place').value.trim();
+      const need=+document.getElementById('ed-need').value||4;
+      const scan_login=document.getElementById('ed-slogin').value.trim();
+      const scan_pass=document.getElementById('ed-spass').value.trim();
+      if(!title){ return; }
+      await api.addEvent({id,title,date:date||null,time:time||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null});
+      coord.editing=null; state.events=await api.eventsCoord(); drawCoordinator();
+    });
+    document.getElementById('e-add').onclick=async()=>{
+      const title=document.getElementById('e-title').value.trim();
+      const date=document.getElementById('e-date').value;
+      const time=document.getElementById('e-time').value;
+      const place=document.getElementById('e-place').value.trim();
+      const need=+document.getElementById('e-need').value||4;
+      const scan_login=document.getElementById('e-slogin').value.trim();
+      const scan_pass=document.getElementById('e-spass').value.trim();
+      if(!title){ return; }
+      await api.addEvent({title,date:date||null,time:time||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); coord.showAddEvent=false; state.events=await api.eventsCoord(); drawCoordinator();
+    };
+    hydratePosters(el);
+  } else if(coord.tab==='team') {
+    el.innerHTML = stats + subtabs + `<div id="team-zone"></div>`;
+  }
+  if(coord.tab==='team'){ drawTeam(); }
+  const bp=document.getElementById('ct-people'); if(bp) bp.onclick=()=>{ coord.tab='people'; drawCoordinator(); };
+  const be=document.getElementById('ct-events'); if(be) be.onclick=()=>{ coord.tab='events'; drawCoordinator(); };
+  const bt=document.getElementById('ct-team'); if(bt) bt.onclick=()=>{ coord.tab='team'; drawCoordinator(); };
+  document.getElementById('ct-out').onclick=()=>{ coordAuth=null; sessionStorage.removeItem(COORD_KEY); state.role=null; render(); };
+}
+
+// --- вкладка ПОЛЬЗОВАТЕЛИ: табы Координаторы/Волонтёры, список, профиль ---
+async function drawTeam(){
+  el.querySelector('#team-zone')?.remove();
+  const zone = document.createElement('div');
+  zone.id='team-zone';
+  zone.innerHTML = `<div class="loading">Загрузка…</div>`;
+  el.appendChild(zone);
+
+  // если открыт профиль конкретного волонтёра
+  if(coord.viewUser){ await drawUserProfile(zone, coord.viewUser); return; }
+
+  const innerTabs = `<div class="row" style="margin:0 0 12px">
+    <button class="tab ${coord.teamTab==='volunteers'?'active':''}" id="tt-vol">Волонтёры</button>
+    <button class="tab ${coord.teamTab==='coords'?'active':''}" id="tt-coord">Координаторы</button>
+  </div>`;
+
+  if(coord.teamTab==='coords'){
+    const coords = await api.coordList();
+    const coordCards = coords.length ? coords.map(c=>`
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div><div style="font-weight:800">${esc(c.name||c.login)}</div><div class="muted">${esc(c.login)}</div></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn small ghost" data-creset="${esc(c.login)}">Сброс пароля</button>
+          <button class="btn small danger" data-cdel="${esc(c.login)}">Удалить</button>
+        </div>
+      </div>`).join('') : '<div class="card center muted">Пока только мастер-вход. Добавьте координатора ниже.</div>';
+    zone.innerHTML = innerTabs + `
+      <div class="section-label">Координаторы:</div>
+      ${coordCards}
+      <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Добавить координатора</h3>
+        <label><span>Логин</span><input id="nc-login" placeholder="например, aida"></label>
+        <label><span>Имя</span><input id="nc-name" placeholder="Имя координатора"></label>
+        <label><span>Пароль</span><input id="nc-pass" type="password" placeholder="пароль"></label>
+        <div class="err" id="nc-err" style="display:none"></div>
+        <button class="btn" id="nc-add">Добавить</button>
+      </div>`;
+    zone.querySelectorAll('[data-creset]').forEach(b=>b.onclick=async()=>{
+      const login=b.dataset.creset; const np=prompt('Новый пароль для '+login+':'); if(!np) return;
+      await api.coordReset({login,newPassword:np}); alert('Пароль обновлён');
+    });
+    zone.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=async()=>{
+      const login=b.dataset.cdel; if(!confirm('Удалить координатора '+login+'?')) return;
+      await api.coordDel(login); drawCoordinator();
+    });
+    const ncAdd=zone.querySelector('#nc-add'); if(ncAdd) ncAdd.onclick=async()=>{
+      const login=zone.querySelector('#nc-login').value.trim();
+      const name=zone.querySelector('#nc-name').value.trim();
+      const pass=zone.querySelector('#nc-pass').value;
+      if(!login||!pass){ const e=zone.querySelector('#nc-err'); e.textContent='Нужны логин и пароль'; e.style.display='block'; return; }
+      const r=await api.coordAdd({login,name,password:pass}); const d=await r.json();
+      if(!r.ok){ const e=zone.querySelector('#nc-err'); e.textContent=d.error||'Ошибка'; e.style.display='block'; return; }
+      drawCoordinator();
+    };
+  } else {
+    // волонтёры — список людей с поиском
+    const vols = await api.listVolunteers();
+    zone.innerHTML = innerTabs +
+      `<div class="search-wrap"><input id="tu-search" class="search" placeholder="Поиск по имени или телефону…" value="${esc(coord.teamQ)}"></div>
+       <div id="tu-list"></div>`;
+    const listEl = zone.querySelector('#tu-list');
+    function renderList(){
+      const q=(coord.teamQ||'').trim().toLowerCase();
+      let list = vols;
+      if(q) list = vols.filter(v=>(v.name||'').toLowerCase().includes(q)||(v.phone||'').toLowerCase().includes(q));
+      listEl.innerHTML = list.length ? list.map(v=>`
+        <div class="card" style="display:flex;align-items:center;gap:12px">
+          <button class="user-open" data-uphone="${esc(v.phone)}" style="flex:1;display:flex;align-items:center;gap:12px;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;padding:0">
+            ${avaHTML(v)}
+            <div>
+              <div style="font-weight:800;font-size:16px;color:var(--ink)">${esc(v.name)}</div>
+              <div class="muted">${esc(v.phone)}</div>
+            </div>
+          </button>
+          <button class="icon-btn" data-udel="${esc(v.phone)}" title="Удалить" style="flex:0 0 auto">🗑️</button>
+        </div>`).join('') : '<div class="card center muted">Никого не найдено.</div>';
+      listEl.querySelectorAll('.user-open').forEach(b=>b.onclick=()=>{ coord.viewUser=b.dataset.uphone; drawCoordinator(); });
+      listEl.querySelectorAll('[data-udel]').forEach(b=>b.onclick=async()=>{
+        const phone=b.dataset.udel; if(!confirm('Удалить волонтёра '+phone+'? Его записи тоже удалятся.')) return;
+        await api.delVolunteer(phone); drawCoordinator();
+      });
+    }
+    renderList();
+    const su=zone.querySelector('#tu-search');
+    su.oninput=e=>{ coord.teamQ=e.target.value; renderList(); };
+  }
+
+  const bv=zone.querySelector('#tt-vol'); if(bv) bv.onclick=()=>{ coord.teamTab='volunteers'; coord.viewUser=null; drawCoordinator(); };
+  const bc=zone.querySelector('#tt-coord'); if(bc) bc.onclick=()=>{ coord.teamTab='coords'; coord.viewUser=null; drawCoordinator(); };
+}
+
+// --- ПРОФИЛЬ ВОЛОНТЁРА (для координатора) ---
+async function drawUserProfile(zone, phone){
+  zone.innerHTML = `<div class="loading">Загрузка…</div>`;
+  const data = await api.volProfile(phone);
+  if(!data || !data.profile){ zone.innerHTML='<div class="card center muted">Профиль не найден.</div>'; return; }
+  const p = data.profile, sg = data.signups||[];
+  const approved = sg.filter(x=>x.status==='approved');
+  const badges = sg.filter(x=>x.badge).length, vests = sg.filter(x=>x.vest).length;
+  const history = sg.length ? sg.map(s=>`
+    <div class="card">
+      <div style="font-weight:800">${esc(s.title)}</div>
+      <div class="muted" style="margin-top:2px">${s.date?fmtDateFull(s.date)+', '+weekday(s.date):''}${s.place?' · '+esc(s.place):''}</div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <span class="pill ${s.status==='approved'?'green':'amber'}">${s.status==='approved'?'Подтверждён':'Ждёт'}</span>
+        ${s.badge?'<span class="pill green">Бейдж ✓</span>':''}
+        ${s.vest?'<span class="pill green">Манишка ✓</span>':''}
+      </div>
+    </div>`).join('') : '<div class="card center muted">Пока нет записей.</div>';
+
+  zone.innerHTML = `
+    <button class="back-btn" id="up-back">‹ К списку</button>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div class="ava-edit" id="up-ava-wrap">${avaHTML(p,'lg')}<span class="cam">📷</span></div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:20px">${esc(p.name)}</div>
+          <div class="muted" style="margin-top:2px">${esc(p.phone)}</div>
+          ${p.birthday?`<div class="muted" style="margin-top:2px">🎂 ${fmtDateFull(p.birthday)}${birthdayAge(p.birthday)}</div>`:''}
+        </div>
+      </div>
+      <button class="btn ghost small" id="up-edit" style="margin-top:12px">Редактировать данные</button>
+    </div>
+    <div class="card" id="up-edit-form" style="display:none">
+      <h3 style="margin:0 0 12px;font-size:16px">Редактирование</h3>
+      <label><span>Имя и фамилия</span><input id="up-name" value="${esc(p.name)}"></label>
+      <label><span>Телефон</span><input value="${esc(p.phone)}" disabled style="opacity:.6"></label>
+      <label><span>Дата рождения</span><input id="up-bday" type="date" value="${esc(p.birthday||'')}"></label>
+      <label><span>Новый пароль (необязательно)</span><input id="up-pass" type="password" placeholder="оставьте пустым, чтобы не менять"></label>
+      <div class="err" id="up-err" style="display:none"></div>
+      <div class="row">
+        <button class="btn small" id="up-save">Сохранить</button>
+        <button class="btn small ghost" id="up-cancel">Отмена</button>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>${approved.length}</b><span>событий</span></div>
+      <div class="stat"><b>${badges}</b><span>бейджей</span></div>
+      <div class="stat"><b>${vests}</b><span>манишек</span></div>
+    </div>
+    <div class="card" style="background:var(--green-soft);border-color:#CDEAC4">
+      <div style="font-weight:800;color:var(--green-dark)">🏆 Достижения</div>
+      <div class="muted" style="margin-top:4px;font-size:13px">Скоро: уровни и награды за активность. Раздел в разработке.</div>
+    </div>
+    <div class="section-label">История участия:</div>
+    ${history}`;
+  zone.querySelector('#up-back').onclick=()=>{ coord.viewUser=null; drawCoordinator(); };
+
+  // загрузка аватарки координатором
+  zone.querySelector('#up-ava-wrap').onclick=async()=>{
+    const img=await pickImage(); if(!img) return;
+    await api.patchVolunteer({phone:p.phone, avatar:img});
+    drawUserProfile(zone, phone);
+  };
+  // показать/скрыть форму редактирования
+  const form=zone.querySelector('#up-edit-form');
+  zone.querySelector('#up-edit').onclick=()=>{ form.style.display = form.style.display==='none' ? 'block' : 'none'; };
+  zone.querySelector('#up-cancel').onclick=()=>{ form.style.display='none'; };
+  zone.querySelector('#up-save').onclick=async()=>{
+    const name=zone.querySelector('#up-name').value.trim();
+    const bday=zone.querySelector('#up-bday').value;
+    const np=zone.querySelector('#up-pass').value;
+    if(!name){ const e=zone.querySelector('#up-err'); e.textContent='Имя не может быть пустым'; e.style.display='block'; return; }
+    const payload={phone:p.phone, name, birthday:bday||null};
+    if(np) payload.newPassword=np;
+    await api.patchVolunteer(payload);
+    drawUserProfile(zone, phone);
+  };
+}
+
+// возраст в скобках по дате рождения
+function birthdayAge(iso){
+  try{ const d=new Date(iso); const now=new Date(); let a=now.getFullYear()-d.getFullYear();
+    const m=now.getMonth()-d.getMonth(); if(m<0||(m===0&&now.getDate()<d.getDate())) a--;
+    return a>0&&a<120?` · ${a} лет`:''; }catch(_){ return ''; }
+}
+
+// --- ЭКРАН ВЫБОРА РОЛИ ---
+function renderRolePick(){
+  setHeaderSub();
+  el.innerHTML = `<div style="margin-top:24px">
+    <p class="muted" style="text-align:center;margin:0 0 18px">Войдите как:</p>
+    <button class="role-card" id="role-vol">
+      <div class="role-emoji">🙌</div>
+      <div><div class="role-ttl">Я волонтёр</div><div class="role-sub">Записаться на события, мои записи</div></div>
+    </button>
+    <button class="role-card" id="role-coord">
+      <div class="role-emoji">🛡️</div>
+      <div><div class="role-ttl">Я координатор</div><div class="role-sub">Управление событиями и командой</div></div>
+    </button>
+  </div>`;
+  document.getElementById('role-vol').onclick=()=>{ state.role='volunteer'; vol.vauth = localStorage.getItem(PHONE_KEY)?'login':'register'; render(); };
+  document.getElementById('role-coord').onclick=()=>{ state.role='coordinator'; render(); };
+}
+
+// ---------- РОУТЕР (чистые адреса) ----------
+let routing = false; // защита от лишних pushState при программном переходе
+
+// выставить адрес в строке по текущему состоянию (без перерисовки)
+function syncURL(){
+  let path = '/';
+  if(state.role==='coordinator'){ path = '/coordinator'; }
+  else if(state.role==='volunteer'){
+    if(vol.view==='event' && vol.eventId){ path = '/event/'+vol.eventId; }
+    else if(vol.vtab==='profile'){ path = '/my'; }
+    else { path = '/'; }
+  }
+  if(location.pathname !== path){ history.pushState({}, '', path); }
+}
+
+// применить адрес к состоянию (при заходе по ссылке / навигации назад)
+function applyURL(){
+  const p = location.pathname;
+  if(p.startsWith('/coordinator')){ if(coordAuth||true) state.role='coordinator'; return; }
+  if(p.startsWith('/event/')){
+    const id = p.split('/event/')[1].replace(/\/$/,'');
+    if(me){ state.role='volunteer'; vol.eventId=id; vol.view='event'; }
+    else { pendingEvent = id; } // откроем после входа
+    return;
+  }
+  if(p.startsWith('/my')){
+    if(me){ state.role='volunteer'; vol.vtab='profile'; vol.view='list'; }
+    return;
+  }
+  // '/' — главная (как есть: волонтёр-список или выбор роли)
+}
+let pendingEvent = null;
+
+window.addEventListener('popstate', ()=>{ routing=true; applyURL(); render(); routing=false; });
+
+function render(){
+  setHeaderSub();
+  if(!routing) syncURL();
+  if(state.role==='volunteer'){ renderVolunteer(); return; }
+  if(state.role==='coordinator'){ renderCoordinator(); return; }
+  renderRolePick();
+}
+(async function init(){
+  await loadEvents();
+  // координатор залогинен в этой сессии — сразу его панель
+  if(coordAuth){ state.role='coordinator'; applyURL(); render(); return; }
+  // волонтёр: пробуем восстановить сессию из localStorage
+  try{
+    const saved = JSON.parse(localStorage.getItem(VOL_KEY)||'null');
+    if(saved && saved.phone && saved.pass){
+      const r = await api.vLogin({phone:saved.phone, password:saved.pass});
+      if(r.ok){ const data=await r.json(); me=data.profile; vol.mySignups=data.signups||[]; volPass=saved.pass; state.role='volunteer'; vol.vtab='events'; vol.view='list'; }
+      else { localStorage.removeItem(VOL_KEY); }
+    }
+  }catch(_){ }
+  // разобрать начальный адрес (открытие по прямой ссылке)
+  applyURL();
+  // если ждали открытия события после входа
+  if(pendingEvent && me){ vol.eventId=pendingEvent; vol.view='event'; pendingEvent=null; }
+  render();
+})();
+</script>
+</body>
+</html>
