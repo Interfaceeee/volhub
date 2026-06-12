@@ -363,6 +363,41 @@ function eventImg(e){
   return `<svg class="ph" width="44" height="44" viewBox="0 0 24 24" fill="none"><path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M3 16l5-4 4 3 3-2 6 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
+// кэш найденных афиш по слагу (на время сессии), чтобы не парсить повторно
+const posterCache = {};
+// достать og:image со страницы события Ticketon по слагу
+async function fetchPoster(slug){
+  if(!slug) return null;
+  if(posterCache[slug] !== undefined) return posterCache[slug];
+  try{
+    const r = await fetch(`https://ticketon.kg/event/${slug}`, { headers:{accept:'text/html'} });
+    if(!r.ok){ posterCache[slug]=null; return null; }
+    const txt = await r.text();
+    const m = txt.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i)
+           || txt.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:image["']/i);
+    const url = m ? m[1] : null;
+    posterCache[slug] = url;
+    return url;
+  }catch(_){ posterCache[slug]=null; return null; }
+}
+// после отрисовки списка — подгрузить афиши в карточки, у которых есть data-slug и нет картинки
+function hydratePosters(root){
+  const scope = root || document;
+  scope.querySelectorAll('[data-poster-slug]').forEach(async box=>{
+    const slug = box.getAttribute('data-poster-slug');
+    if(!slug || box.dataset.posterDone) return;
+    box.dataset.posterDone = '1';
+    const url = await fetchPoster(slug);
+    if(!url) return;
+    // запомним в state, чтобы при перерисовке карточка уже знала картинку
+    const ev = state.events.find(x=>x.slug===slug || x.id===box.getAttribute('data-poster-id'));
+    if(ev) ev.image = url;
+    const img = new Image();
+    img.onload = ()=>{ box.innerHTML = `<img src="${url}" alt="">`; };
+    img.src = url;
+  });
+}
+
 // ---------- VOLUNTEER ----------
 // me: профиль текущего волонтёра {phone,name,birthday} или null
 // vauth: 'login' | 'register' — экран авторизации волонтёра
@@ -461,7 +496,7 @@ function renderLogin(){
 function eventCardHTML(e, signedIds){
   const mine=signedIds.has(e.id);
   return `<button class="ecard" data-id="${esc(e.id)}">
-    <div class="img">${eventImg(e)}</div>
+    <div class="img"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}</div>
     <div class="body">
       <div class="ttl">${esc(e.title)}</div>
       ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
@@ -504,10 +539,12 @@ function renderList(){
     if(qq) f=f.filter(x=>(x.title||'').toLowerCase().includes(qq)||(x.place||'').toLowerCase().includes(qq));
     grid.innerHTML = f.length? f.map(ev=>eventCardHTML(ev, signedIds)).join('') : '<div class="card center muted" style="grid-column:1/-1">Ничего не найдено.</div>';
     grid.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
+    hydratePosters(grid);
   };
   document.querySelectorAll('.cal-day').forEach(c=>c.onclick=()=>{ vol.day=c.dataset.day; render(); });
   document.querySelectorAll('.ecard').forEach(b=>b.onclick=()=>{ vol.eventId=b.dataset.id; vol.view='event'; window.scrollTo(0,0); render(); });
   bindVolNav();
+  hydratePosters(el);
 }
 
 // --- СТРАНИЦА СОБЫТИЯ ---
@@ -521,7 +558,7 @@ function renderEventPage(){
   el.innerHTML = `
     <button class="back-btn" id="back">‹ Назад к событиям</button>
     <div class="evpage">
-      <div class="evpage-img">${eventImg(e)}${e.time?`<span class="evpage-time">к ${esc(e.time)}</span>`:''}</div>
+      <div class="evpage-img"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}${e.time?`<span class="evpage-time">к ${esc(e.time)}</span>`:''}</div>
       <div class="evpage-sheet">
         <h1 class="evpage-ttl">${esc(e.title)}</h1>
         ${e.date?`<div class="evpage-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
@@ -546,6 +583,7 @@ function renderEventPage(){
       : `<div class="sticky-bar"><button class="btn" id="v-submit" ${full?'disabled':''}>${full?'Мест больше нет':'Записаться'}</button></div>`}`;
 
   document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
+  hydratePosters(el);
   const sub=document.getElementById('v-submit');
   if(sub) sub.onclick=async()=>{
     if(sub.disabled) return;
@@ -878,7 +916,7 @@ function drawCoordinator(){
       const past = isPastEvent(e);
       return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px${past?';opacity:.6':''}">
       <div style="display:flex;align-items:center;gap:10px;min-width:0">
-        <div class="coord-poster">${eventImg(e)}</div>
+        <div class="coord-poster"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}</div>
         <div style="min-width:0"><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
         <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div>
         ${hasScan?'<div class="muted" style="margin-top:2px;font-size:12px">🔑 сканер задан</div>':''}</div>
@@ -951,6 +989,7 @@ function drawCoordinator(){
       if(!title){ return; }
       await api.addEvent({title,date:date||null,time:time||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); coord.showAddEvent=false; state.events=await api.eventsCoord(); drawCoordinator();
     };
+    hydratePosters(el);
   } else if(coord.tab==='team') {
     el.innerHTML = stats + subtabs + `<div id="team-zone"></div>`;
   }
