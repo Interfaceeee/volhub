@@ -103,6 +103,22 @@ export default async function handler(req, res) {
           if (c) { ev.taken = Number(c.taken) || 0; ev.approved_count = Number(c.approved_count) || 0; }
         }
       } catch (e) { console.error('count signups failed:', e && e.message); }
+      // подмешиваем сохранённые координатором поля из базы (сканер, need, image, время)
+      try {
+        const overrides = await sql`SELECT id, need, scan_login, scan_pass, image, event_time FROM events`;
+        const ovById = {};
+        for (const o of overrides) ovById[String(o.id)] = o;
+        for (const ev of events) {
+          const o = ovById[String(ev.id)];
+          if (o) {
+            if (o.need != null) ev.need = Number(o.need);
+            if (o.scan_login) ev.scan_login = o.scan_login;
+            if (o.scan_pass) ev.scan_pass = o.scan_pass;
+            if (o.image) ev.image = o.image;
+            if (o.event_time && !ev.time) ev.time = o.event_time;
+          }
+        }
+      } catch (e) { console.error('overrides failed:', e && e.message); }
       // сортировка по дате (без даты — в конец)
       events.sort((a, b) => {
         if (!a.date) return 1;
@@ -118,6 +134,24 @@ export default async function handler(req, res) {
 
   // ===== Координаторские операции по-прежнему работают с локальной БД =====
   await ensureSchema();
+
+  // ПУБЛИЧНО: кэшируем найденную фронтом афишу, чтобы не парсить заново.
+  // PUT {id, image} — сохраняет картинку события (создаёт строку-заглушку при необходимости)
+  if (req.method === 'PUT') {
+    const b = await readBody(req);
+    if (!b.id || !b.image) return res.status(400).json({ error: 'id and image required' });
+    if (!/^https?:\/\//.test(String(b.image))) return res.status(400).json({ error: 'bad image url' });
+    try {
+      await sql`
+        INSERT INTO events (id, title, source, image)
+        VALUES (${String(b.id)}, ${b.title || 'Ticketon'}, 'ticketon', ${b.image})
+        ON CONFLICT (id) DO UPDATE SET image = EXCLUDED.image`;
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      console.error('cache poster failed:', e && e.message);
+      return res.status(200).json({ ok: false });
+    }
+  }
 
   if (req.method === 'POST') {
     if (!(await checkCoordinator(req)).ok) return res.status(401).json({ error: 'Coordinator login required' });
