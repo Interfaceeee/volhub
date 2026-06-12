@@ -15,10 +15,10 @@ function normPhone(p) {
 
 // собрать профиль + записи волонтёра (сканер только по подтверждённым)
 async function profileWithSignups(phone) {
-  const prof = await sql`SELECT phone, name, birthday, tg_chat_id, avatar FROM volunteers WHERE phone = ${phone}`;
+  const prof = await sql`SELECT phone, name, birthday, tg_chat_id, avatar, bonus_points FROM volunteers WHERE phone = ${phone}`;
   if (!prof.length) return null;
   const p = prof[0];
-  const profile = { phone: p.phone, name: p.name, birthday: p.birthday, avatar: p.avatar || null, tg_linked: !!p.tg_chat_id };
+  const profile = { phone: p.phone, name: p.name, birthday: p.birthday, avatar: p.avatar || null, tg_linked: !!p.tg_chat_id, bonus_points: Number(p.bonus_points) || 0 };
   const rows = await sql`
     SELECT s.id, s.status, s.badge, s.vest, s.event_id,
            e.title, e.date, e.place,
@@ -100,7 +100,7 @@ export default async function handler(req, res) {
     // если передан ?phone= — отдаём полный профиль одного волонтёра с историей и инвентарём
     const onePhone = (req.query.phone || '').trim();
     if (onePhone) {
-      const prof = await sql`SELECT phone, name, birthday, avatar FROM volunteers WHERE phone = ${onePhone}`;
+      const prof = await sql`SELECT phone, name, birthday, avatar, bonus_points FROM volunteers WHERE phone = ${onePhone}`;
       if (!prof.length) return res.status(404).json({ error: 'Профиль не найден' });
       const rows = await sql`
         SELECT s.id, s.status, s.badge, s.vest, s.event_id, e.title, e.date, e.place
@@ -131,6 +131,11 @@ export default async function handler(req, res) {
     // сброс пароля волонтёра координатором
     if (b.newPassword) {
       await sql`UPDATE volunteers SET pass_hash = ${hashPassword(b.newPassword)} WHERE phone = ${phone}`;
+    }
+    // ручная корректировка бонусных очков (для опытных волонтёров)
+    if (b.bonus_points !== undefined && b.bonus_points !== null) {
+      let bp = parseInt(b.bonus_points, 10); if (isNaN(bp) || bp < 0) bp = 0;
+      await sql`UPDATE volunteers SET bonus_points = ${bp} WHERE phone = ${phone}`;
     }
     return res.status(200).json({ ok: true });
   }
