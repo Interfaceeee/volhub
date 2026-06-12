@@ -83,6 +83,11 @@
   .help-st.ok{background:var(--green-soft)} .help-st.bad{background:#FBEAEA}
   .help-faq{padding:10px 0; border-bottom:1px solid var(--green-line); line-height:1.45; font-size:14px}
   .help-faq:last-child{border-bottom:none}
+  .lvl-bar{height:10px; background:var(--green-line); border-radius:6px; overflow:hidden; margin:14px 0 0}
+  .lvl-bar-fill{height:100%; background:var(--green); border-radius:6px; transition:width .6s ease}
+  .tier{display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-radius:10px; margin-bottom:6px; background:var(--bg); font-size:14px}
+  .tier.active{background:var(--green-soft); border:1.5px solid var(--green)}
+  .tier.active b{color:var(--green-dark)}
   .cat-row{display:flex; gap:8px; overflow-x:auto; padding:2px 2px 12px; scrollbar-width:none}
   .cat-row::-webkit-scrollbar{display:none}
   .cat-chip{flex:0 0 auto; padding:8px 16px; border-radius:20px; border:1.5px solid var(--green-line);
@@ -346,6 +351,63 @@ function isPast(iso, time){
 }
 function isPastEvent(e){ return isPast(e.date, e.time); }
 
+// ===== СИСТЕМА УРОВНЕЙ =====
+// 15 очков за каждое успешно посещённое событие (approved + уже прошло). 50 очков = 1 уровень. Максимум 60.
+const PTS_PER_EVENT = 15;
+const PTS_PER_LEVEL = 50;
+const MAX_LEVEL = 60;
+// карта событий по id (для определения даты/прошло ли)
+function eventsById(){ const m={}; state.events.forEach(e=>m[String(e.id)]=e); return m; }
+// число успешно посещённых событий волонтёра (approved + событие прошло)
+function attendedCount(){
+  const m = eventsById();
+  return vol.mySignups.filter(s=>{
+    if(s.status!=='approved') return false;
+    const e = m[String(s.event_id)];
+    // если события уже нет в списке (Ticketon убрал) — считаем по дате записи, иначе по событию
+    if(e) return isPastEvent(e);
+    return isPast(s.date, s.time);
+  }).length;
+}
+// сводка уровня: очки, уровень, прогресс внутри уровня
+function levelInfo(){
+  const attended = attendedCount();
+  const bonus = (me && Number(me.bonus_points)) || 0;
+  const points = attended * PTS_PER_EVENT + bonus;
+  let level = Math.floor(points / PTS_PER_LEVEL) + 1;
+  if(level > MAX_LEVEL) level = MAX_LEVEL;
+  const inLevel = level >= MAX_LEVEL ? PTS_PER_LEVEL : points % PTS_PER_LEVEL;
+  const pct = Math.round(inLevel / PTS_PER_LEVEL * 100);
+  return { attended, points, level, inLevel, pct, max: level >= MAX_LEVEL, bonus };
+}
+// лимит одновременных активных записей по уровню: 1–15→2, 16–30→4, 31–45→6, 46–60→8
+function slotLimit(level){
+  if(level <= 15) return 2;
+  if(level <= 30) return 4;
+  if(level <= 45) return 6;
+  return 8;
+}
+// сколько слотов занято: approved-записи на ещё не прошедшие события (для экрана достижений)
+function usedSlots(){
+  const m = eventsById();
+  return vol.mySignups.filter(s=>{
+    if(s.status!=='approved') return false;
+    const e = m[String(s.event_id)];
+    if(e) return !isPastEvent(e);
+    return !isPast(s.date, s.time);
+  }).length;
+}
+// активные записи для лимита при записи: pending + approved на будущие события
+function activeSignups(){
+  const m = eventsById();
+  return vol.mySignups.filter(s=>{
+    if(s.status==='rejected') return false;
+    const e = m[String(s.event_id)];
+    if(e) return !isPastEvent(e);
+    return !isPast(s.date, s.time);
+  }).length;
+}
+
 const headerSub = document.getElementById('header-sub');
 function setHeaderSub(){
   if(state.role==='coordinator'){ headerSub.textContent = 'Координатор'; }
@@ -455,8 +517,76 @@ function renderVolunteer(){
   if(vol.view==='done'){ renderDone(); return; }
   if(vol.view==='event'){ renderEventPage(); return; }
   if(vol.view==='help'){ renderHelp(); return; }
+  if(vol.view==='awards'){ renderAwards(); return; }
   if(vol.vtab==='profile'){ renderProfile(); return; }
   renderList();
+}
+
+// экран достижений: уровень, очки, прогресс, лимит записей
+function renderAwards(){
+  const L = levelInfo();
+  const limit = slotLimit(L.level);
+  const used = usedSlots();
+  const nextAt = L.max ? null : (L.level)*PTS_PER_LEVEL; // очков для следующего уровня
+  const toNext = L.max ? 0 : nextAt - L.points;
+  const eventsToNext = Math.ceil(toNext / PTS_PER_EVENT);
+  // кольцо прогресса
+  const R = 54, C = 2*Math.PI*R, off = C * (1 - L.pct/100);
+  const ring = `
+    <svg width="140" height="140" viewBox="0 0 140 140" style="display:block;margin:0 auto">
+      <circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--green-line)" stroke-width="12"/>
+      <circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--green)" stroke-width="12"
+        stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}"
+        transform="rotate(-90 70 70)" style="transition:stroke-dashoffset .6s ease"/>
+      <text x="70" y="64" text-anchor="middle" font-size="13" fill="var(--sub)" font-weight="600">Уровень</text>
+      <text x="70" y="92" text-anchor="middle" font-size="34" fill="var(--ink)" font-weight="800">${L.level}</text>
+    </svg>`;
+  // ступени лимитов
+  const tiers = [
+    {r:'1–15', s:2}, {r:'16–30', s:4}, {r:'31–45', s:6}, {r:'46–60', s:8}
+  ];
+  const tierRows = tiers.map(t=>{
+    const active = (L.level<=15&&t.s===2)||(L.level>15&&L.level<=30&&t.s===4)||(L.level>30&&L.level<=45&&t.s===6)||(L.level>45&&t.s===8);
+    return `<div class="tier ${active?'active':''}">
+      <span>Уровни ${t.r}</span><b>${t.s} ${t.s===2?'события':'событий'} разом</b></div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="page-head"><h1 class="page-title" style="margin:0">Достижения</h1></div>
+
+    <div class="card" style="text-align:center;padding:20px">
+      ${ring}
+      <div style="margin-top:6px;font-size:15px;color:var(--sub)">${L.points} очков всего</div>
+      <div class="lvl-bar"><div class="lvl-bar-fill" style="width:${L.pct}%"></div></div>
+      <div style="font-size:14px;color:var(--sub);margin-top:6px">
+        ${L.max ? 'Максимальный уровень достигнут! 🏆'
+                : `${L.inLevel} / ${PTS_PER_LEVEL} до уровня ${L.level+1} · ещё ${eventsToNext} ${eventsToNext===1?'событие':'события'}`}
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-weight:800;font-size:16px">Посещено событий</div>
+          <div class="muted" style="font-size:13px">Каждое даёт +${PTS_PER_EVENT} очков</div></div>
+        <div style="font-size:30px;font-weight:800;color:var(--green-dark)">${L.attended}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800;font-size:16px;margin-bottom:4px">Одновременных записей: ${used} из ${limit}</div>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">Чем выше уровень — тем больше событий можно держать активными одновременно.</div>
+      ${tierRows}
+    </div>
+
+    <div class="card" style="background:var(--green-soft);border-color:var(--green-line)">
+      <div style="font-weight:800;font-size:15px;margin-bottom:6px">Как растёт уровень?</div>
+      <div class="muted" style="font-size:14px;line-height:1.5">
+        Очки начисляются за <b>успешно посещённые</b> события — те, что координатор подтвердил и которые уже прошли.
+        Записался, но не пришёл — очки не начислятся.
+      </div>
+    </div>
+  ` + volNav();
+  bindVolNav();
 }
 
 // экран помощи волонтёру: сканер, режимы, статусы, FAQ, WhatsApp
@@ -465,7 +595,7 @@ function renderHelp(){
   const APPSTORE='https://apps.apple.com/kz/app/%D1%81%D0%BA%D0%B0%D0%BD%D0%B5%D1%80-freedom-ticketon-2-0/id6753947376';
   const WHATSAPP='https://chat.whatsapp.com/DdQRNW9XP2D9cIFLgxo3dM?mode=gi_t';
   el.innerHTML = `
-    <div class="page-head"><button class="back-btn" id="help-back">‹ Назад</button></div>
+    <div class="page-head"><button class="back-btn" id="help-back">‹ Назад</button><button class="help-btn" id="help-share" title="Поделиться">🔗</button></div>
     <h1 class="page-title" style="margin:6px 0 4px">Помощь волонтёру</h1>
     <p class="muted" style="margin:0 0 16px">Как сканировать билеты на входе</p>
 
@@ -535,6 +665,11 @@ function renderHelp(){
     </div>
   ` + volNav();
   document.getElementById('help-back').onclick=()=>{ vol.view='list'; render(); };
+  const hs=document.getElementById('help-share');
+  if(hs) hs.onclick=async()=>{
+    const url=location.origin+'/help';
+    try{ if(navigator.share){ await navigator.share({title:'Инструкция волонтёра',url}); } else { await navigator.clipboard.writeText(url); hs.textContent='✓'; setTimeout(()=>{hs.textContent='🔗';},1500); } }catch(_){}
+  };
   bindVolNav();
 }
 
@@ -546,7 +681,7 @@ function volNav(){  const onHome = vol.vtab==='events' && vol.view!=='event';
   const icoUser = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.6" stroke="currentColor" stroke-width="1.8"/><path d="M5 19c0-3.4 3.1-5.6 7-5.6s7 2.2 7 5.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
   return `<div class="vnav">
     <button class="vnav-btn ${onHome?'on':''}" id="nav-events">${icoHome}<span>Главная</span></button>
-    <button class="vnav-btn" id="nav-awards">${icoAward}<span>Достижения</span></button>
+    <button class="vnav-btn ${vol.view==='awards'?'on':''}" id="nav-awards">${icoAward}<span>Достижения</span></button>
     <button class="vnav-btn ${onProf?'on':''}" id="nav-profile">${icoUser}<span>Профиль</span></button>
   </div>`;
 }
@@ -554,7 +689,7 @@ function bindVolNav(){
   const e=document.getElementById('nav-events'), p=document.getElementById('nav-profile'), a=document.getElementById('nav-awards');
   if(e) e.onclick=()=>{ vol.vtab='events'; vol.view='list'; render(); };
   if(p) p.onclick=()=>{ vol.vtab='profile'; vol.view='list'; render(); };
-  if(a) a.onclick=()=>{ showModal('🏆 Достижения', 'Скоро здесь появятся уровни и награды за волонтёрство: бесплатные билеты, мерч, приоритетная запись и не только. Мы ещё придумываем, что туда добавить — следи за обновлениями!'); };
+  if(a) a.onclick=()=>{ vol.vtab='events'; vol.view='awards'; window.scrollTo(0,0); render(); };
 }
 
 // --- ВХОД / РЕГИСТРАЦИЯ ВОЛОНТЁРА ---
@@ -703,6 +838,19 @@ function renderEventPage(){
   const taken=+e.taken||0, full=taken>=e.need;
   const approved=+e.approved_count||0;
   const already = vol.mySignups.find(s=>String(s.event_id)===String(e.id));
+  // лимит одновременных записей по уровню волонтёра
+  const Lv = levelInfo();
+  const limit = slotLimit(Lv.level);
+  const used = activeSignups();
+  const isFutureEvent = !isPastEvent(e);
+  // блокируем запись, если: не записан, событие будущее, и слоты заняты под завязку
+  const slotBlocked = !already && isFutureEvent && used >= limit;
+  // уровень, на котором лимит вырастет (16 / 31 / 46), либо null если уже максимум по слотам
+  function nextSlotLevel(lv){ if(lv<=15) return 16; if(lv<=30) return 31; if(lv<=45) return 46; return null; }
+  const nsl = nextSlotLevel(Lv.level);
+  const slotMsg = nsl
+    ? `Чтобы записаться ещё на одно мероприятие, нужен уровень ${nsl}`
+    : `Ты можешь вести максимум ${limit} событий одновременно`;
 
   el.innerHTML = `
     <button class="back-btn" id="back">‹ Назад к событиям</button>
@@ -712,7 +860,12 @@ function renderEventPage(){
       ${already
         ? `<button class="btn danger-outline" id="v-cancel" style="margin:4px 0 8px">Отменить запись</button>
            <div class="evp-note">Вы записаны · статус: <b>${already.status==='approved'?'подтверждён':'ждёт подтверждения'}</b></div>`
-        : `<button class="btn" id="v-submit" ${full?'disabled':''} style="margin:4px 0 8px">${full?'Мест больше нет':'Записаться волонтёром'}</button>
+        : full
+        ? `<button class="btn" disabled style="margin:4px 0 8px">Мест больше нет</button>`
+        : slotBlocked
+        ? `<button class="btn" disabled style="margin:4px 0 8px">Лимит записей достигнут</button>
+           <div class="evp-note" style="background:var(--green-soft);color:var(--green-dark)">🔒 ${slotMsg}. Сейчас активно ${used} из ${limit}.</div>`
+        : `<button class="btn" id="v-submit" style="margin:4px 0 8px">Записаться волонтёром</button>
            <div class="evp-note">Запишем как <b>${esc(me.name)}</b> (${esc(me.phone)})</div>
            <div class="err" id="v-err" style="display:none;margin-top:8px"></div>`}
       <div class="evp-info">
@@ -1272,6 +1425,12 @@ async function drawUserProfile(zone, phone){
   sg.forEach(s=>{ const e=evMap[s.event_id]; if(e){ if(!s.title)s.title=e.title; if(!s.date)s.date=e.date; if(!s.place)s.place=e.place; } if(!s.title)s.title='Событие'; });
   const approved = sg.filter(x=>x.status==='approved');
   const badges = sg.filter(x=>x.badge).length, vests = sg.filter(x=>x.vest).length;
+  // уровень волонтёра глазами координатора: посещённые (approved+прошло) * 15 + бонус
+  const attendedC = sg.filter(s=>{ if(s.status!=='approved') return false; const e=evMap[s.event_id]; return e?isPastEvent(e):isPast(s.date,s.time); }).length;
+  const bonusC = Number(p.bonus_points)||0;
+  const pointsC = attendedC*15 + bonusC;
+  let levelC = Math.floor(pointsC/50)+1; if(levelC>60) levelC=60;
+  const inLevelC = levelC>=60?50:pointsC%50;
   const history = sg.length ? sg.map(s=>`
     <div class="card">
       <div style="font-weight:800">${esc(s.title)}</div>
@@ -1314,12 +1473,32 @@ async function drawUserProfile(zone, phone){
       <div class="stat"><b>${vests}</b><span>манишек</span></div>
     </div>
     <div class="card" style="background:var(--green-soft);border-color:#CDEAC4">
-      <div style="font-weight:800;color:var(--green-dark)">🏆 Достижения</div>
-      <div class="muted" style="margin-top:4px;font-size:13px">Скоро: уровни и награды за активность. Раздел в разработке.</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:800;color:var(--green-dark)">🏆 Уровень ${levelC}</div>
+        <div class="muted" style="font-size:13px">${pointsC} очков · посещено ${attendedC}</div>
+      </div>
+      <div class="lvl-bar" style="margin-top:10px"><div class="lvl-bar-fill" style="width:${Math.round(inLevelC/50*100)}%"></div></div>
+      <div class="muted" style="font-size:12px;margin-top:6px">${levelC>=60?'Максимальный уровень':`${inLevelC} / 50 до уровня ${levelC+1}`}${bonusC?` · бонус +${bonusC}`:''}</div>
+      <button class="btn ghost small" id="up-bonus-toggle" style="margin-top:10px">Изменить бонусные очки</button>
+      <div id="up-bonus-form" style="display:none;margin-top:10px">
+        <label><span>Бонусные очки (для опытных)</span><input id="up-bonus" type="number" inputmode="numeric" value="${bonusC}" placeholder="напр. 500"></label>
+        <div class="muted" style="font-size:12px;margin:-4px 0 8px">50 очков = 1 уровень. Прибавляется к заработанным.</div>
+        <button class="btn small" id="up-bonus-save">Сохранить очки</button>
+      </div>
     </div>
     <div class="section-label">История участия:</div>
     ${history}`;
   zone.querySelector('#up-back').onclick=()=>{ coord.viewUser=null; drawCoordinator(); };
+  const bonusToggle=zone.querySelector('#up-bonus-toggle');
+  const bonusForm=zone.querySelector('#up-bonus-form');
+  if(bonusToggle) bonusToggle.onclick=()=>{ bonusForm.style.display = bonusForm.style.display==='none'?'block':'none'; };
+  const bonusSave=zone.querySelector('#up-bonus-save');
+  if(bonusSave) bonusSave.onclick=async()=>{
+    let bp=parseInt(zone.querySelector('#up-bonus').value,10); if(isNaN(bp)||bp<0) bp=0;
+    bonusSave.disabled=true; bonusSave.textContent='Сохраняю…';
+    await api.patchVolunteer({phone:p.phone, bonus_points:bp});
+    drawUserProfile(zone, phone);
+  };
 
   // загрузка аватарки координатором
   zone.querySelector('#up-ava-wrap').onclick=async()=>{
@@ -1377,6 +1556,8 @@ function syncURL(){
   if(state.role==='coordinator'){ path = '/coordinator'; }
   else if(state.role==='volunteer'){
     if(vol.view==='event' && vol.eventId){ path = '/event/'+vol.eventId; }
+    else if(vol.view==='help'){ path = '/help'; }
+    else if(vol.view==='awards'){ path = '/awards'; }
     else if(vol.vtab==='profile'){ path = '/my'; }
     else { path = '/'; }
   }
@@ -1395,6 +1576,14 @@ function applyURL(){
   }
   if(p.startsWith('/my')){
     if(me){ state.role='volunteer'; vol.vtab='profile'; vol.view='list'; }
+    return;
+  }
+  if(p.startsWith('/help')){
+    if(me){ state.role='volunteer'; vol.vtab='events'; vol.view='help'; }
+    return;
+  }
+  if(p.startsWith('/awards')){
+    if(me){ state.role='volunteer'; vol.vtab='events'; vol.view='awards'; }
     return;
   }
   // '/' — главная (как есть: волонтёр-список или выбор роли)
