@@ -70,14 +70,15 @@ export default async function handler(req, res) {
       // при подтверждении — шлём уведомление в Telegram, если волонтёр привязан
       if (b.status === 'approved') {
         const rows = await sql`
-          SELECT s.phone, e.title, e.date, e.scan_login, e.scan_pass, v.tg_chat_id, v.name AS vname
+          SELECT s.phone, s.event_id, e.title, e.date, e.scan_login, e.scan_pass, v.tg_chat_id, v.name AS vname
           FROM signups s
-          JOIN events e ON e.id = s.event_id
+          LEFT JOIN events e ON e.id = s.event_id
           LEFT JOIN volunteers v ON v.phone = s.phone
           WHERE s.id = ${b.id}`;
         if (rows.length && rows[0].tg_chat_id) {
           const r = rows[0];
-          let text = `✅ <b>Запись подтверждена!</b>\n\nСобытие: <b>${r.title}</b>`;
+          const evName = r.title || 'мероприятие';
+          let text = `✅ <b>Запись подтверждена!</b>\n\nСобытие: <b>${evName}</b>`;
           if (r.scan_login || r.scan_pass) {
             text += `\n\n🎫 Доступ к сканеру билетов:\nЛогин: <code>${r.scan_login || '—'}</code>\nПароль: <code>${r.scan_pass || '—'}</code>`;
           }
