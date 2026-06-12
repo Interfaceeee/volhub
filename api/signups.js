@@ -35,6 +35,23 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, id });
   }
 
+  // ПУБЛИЧНО: список записавшихся на конкретное событие (без телефонов) — для страницы события
+  if (req.method === 'GET' && req.query.eventId) {
+    const eventId = req.query.eventId;
+    const rows = await sql`
+      SELECT s.name, s.status, v.avatar
+      FROM signups s
+      LEFT JOIN volunteers v ON v.phone = s.phone
+      WHERE s.event_id = ${eventId} AND s.status <> 'rejected'
+      ORDER BY (s.status = 'approved') DESC, s.created_at`;
+    const people = rows.map(r => ({
+      name: r.name,
+      approved: r.status === 'approved',
+      avatar: r.avatar || null,
+    }));
+    return res.status(200).json({ people });
+  }
+
   // всё ниже — только координатор
   const auth = await checkCoordinator(req);
   if (!auth.ok) return res.status(401).json({ error: 'Нужен вход координатора' });
