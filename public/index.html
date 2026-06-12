@@ -944,14 +944,18 @@ function drawCoordinator(){
             ${e.date?`<div class="evp-line"><span class="evp-ico">📅</span><div>${fmtDateFull(e.date)}, ${weekday(e.date)}${e.time?` · ${esc(e.time)}`:''}</div></div>`:''}
             ${e.place?`<div class="evp-line"><span class="evp-ico">📍</span><div>${esc(e.place)}</div></div>`:''}
             <div class="evp-line"><span class="evp-ico">🙌</span><div>Подтверждено ${approvedCnt} из ${need}${full?' · мест нет':''}</div></div>
-            ${(e.scan_login||e.scan_pass)?`<div class="evp-line"><span class="evp-ico">🔑</span><div>Сканер задан</div></div>`:''}
+            ${(e.scan_login||e.scan_pass)?`<div class="evp-line"><span class="evp-ico">🔑</span><div>Сканер — логин: <b>${esc(e.scan_login||'—')}</b>, пароль: <b>${esc(e.scan_pass||'—')}</b></div></div>`:''}
           </div>
-          <button class="btn ghost" id="ev-settings" style="margin-top:12px">⚙️ Настройки события (нужно волонтёров, сканер)</button>
+          <button class="btn ghost" id="ev-settings" style="margin-top:12px">⚙️ Редактировать событие</button>
           <div class="card" id="ev-settings-form" style="display:none;margin-top:10px">
+            <label><span>Название</span><input id="se-title" value="${esc(e.title||'')}"></label>
+            <label><span>Дата</span><input id="se-date" type="date" value="${esc(e.date||'')}"></label>
+            <label><span>Время</span><input id="se-time" type="time" value="${esc(e.time||'')}"></label>
+            <label><span>Место</span><input id="se-place" value="${esc(e.place||'')}" placeholder="Адрес или площадка"></label>
             <label><span>Сколько волонтёров нужно</span><input id="se-need" type="number" inputmode="numeric" value="${need}"></label>
             <label><span>Логин сканера билетов</span><input id="se-slogin" value="${esc(e.scan_login||'')}" placeholder="логин для сканера"></label>
             <label><span>Пароль сканера билетов</span><input id="se-spass" value="${esc(e.scan_pass||'')}" placeholder="пароль для сканера"></label>
-            <button class="btn small" id="se-save">Сохранить настройки</button>
+            <button class="btn small" id="se-save">Сохранить</button>
           </div>
           <div class="section-label" style="margin-top:18px">Заявки (${reqs.length}):</div>
           ${reqs.length?`<button class="btn ghost" id="ev-export" style="margin-bottom:10px">📋 Скопировать список волонтёров</button>`:''}
@@ -970,10 +974,16 @@ function drawCoordinator(){
         catch(_){ showModal('Список волонтёров', text.replace(/\n/g,'<br>'), 'Закрыть'); }
       };
       document.getElementById('se-save').onclick=async()=>{
+        const tt=document.getElementById('se-title').value.trim();
+        const dt=document.getElementById('se-date').value;
+        const tm=document.getElementById('se-time').value;
+        const pl=document.getElementById('se-place').value.trim();
         const nd=+document.getElementById('se-need').value||4;
         const sl=document.getElementById('se-slogin').value.trim();
         const sp=document.getElementById('se-spass').value.trim();
-        await api.addEvent({id:e.id, title:e.title, date:e.date||null, time:e.time||null, place:e.place||null, need:nd, scan_login:sl||null, scan_pass:sp||null});
+        if(!tt){ showModal('Нужно название', 'Укажите название события.', 'Понятно'); return; }
+        const btn=document.getElementById('se-save'); btn.disabled=true; btn.textContent='Сохраняю…';
+        await api.addEvent({id:e.id, title:tt, date:dt||null, time:tm||null, place:pl||null, need:nd, scan_login:sl||null, scan_pass:sp||null});
         state.events=await api.eventsCoord(); drawCoordinator();
       };
       // подтверждение по одному с проверкой мест
