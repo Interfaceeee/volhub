@@ -1,4 +1,4 @@
-// /api/events
+// /api/events  [v2 — с PUT-кэшем афиш и подмешиванием настроек]
 //   GET    - публичный список событий из внешнего API Ticketon (kg-events)
 //            (Кино и Туры исключаются — они не нужны волонтёрам)
 //   POST   - add/update event (coordinator PIN)  [работает с локальной БД]
@@ -105,7 +105,7 @@ export default async function handler(req, res) {
       } catch (e) { console.error('count signups failed:', e && e.message); }
       // подмешиваем сохранённые координатором поля из базы (сканер, need, image, время)
       try {
-        const overrides = await sql`SELECT id, need, scan_login, scan_pass, image, event_time FROM events`;
+        const overrides = await sql`SELECT id, title, date, place, need, scan_login, scan_pass, image, event_time FROM events`;
         const ovById = {};
         for (const o of overrides) ovById[String(o.id)] = o;
         for (const ev of events) {
@@ -115,7 +115,11 @@ export default async function handler(req, res) {
             if (o.scan_login) ev.scan_login = o.scan_login;
             if (o.scan_pass) ev.scan_pass = o.scan_pass;
             if (o.image) ev.image = o.image;
-            if (o.event_time && !ev.time) ev.time = o.event_time;
+            if (o.event_time) ev.time = o.event_time;
+            // координатор мог отредактировать основные поля — они приоритетнее, но только если заданы
+            if (o.title && o.source !== 'ticketon') ev.title = o.title;
+            if (o.date) ev.date = o.date;
+            if (o.place) ev.place = o.place;
           }
         }
       } catch (e) { console.error('overrides failed:', e && e.message); }
