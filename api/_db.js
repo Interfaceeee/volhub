@@ -2,7 +2,7 @@
 // Reads the connection string from any of the standard env vars
 // created by the Neon integration on Vercel.
 
-import { neon } from '@neondatabase/serverless'; v2
+import { neon } from '@neondatabase/serverless';
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 
 const CONN =
