@@ -139,6 +139,23 @@
   input{width:100%; padding:13px 14px; border:1.5px solid var(--line); border-radius:12px;
     font-size:16px; background:var(--card); color:var(--ink); font-family:inherit; outline:none}
   input:focus{border-color:var(--green)}
+  /* iOS: date/time инпуты не должны разъезжаться по высоте */
+  input[type="date"], input[type="time"]{ -webkit-appearance:none; appearance:none; min-height:50px; line-height:1.2; }
+  input[type="number"]{ -webkit-appearance:none; appearance:none; }
+  /* аватарка-фото в кружке (инициалы или картинка) */
+  .ava{ flex:0 0 auto; border-radius:50%; overflow:hidden; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,var(--green),var(--green-dark)); color:#fff; font-weight:800; }
+  .ava img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .ava.sm{ width:46px; height:46px; font-size:17px; }
+  .ava.lg{ width:72px; height:72px; font-size:26px; }
+  /* кнопка-загрузка фото поверх аватарки */
+  .ava-edit{ position:relative; cursor:pointer; }
+  .ava-edit .cam{ position:absolute; right:-2px; bottom:-2px; width:24px; height:24px; border-radius:50%;
+    background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; border:2px solid #fff; }
+  /* мини-афиша в карточке события у координатора */
+  .coord-poster{ width:54px; height:74px; flex:0 0 auto; border-radius:10px; overflow:hidden;
+    background:linear-gradient(135deg,var(--green),var(--green-dark)); display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.5); }
+  .coord-poster img{ width:100%; height:100%; object-fit:cover; }
   .btn{width:100%; padding:14px 18px; border-radius:12px; font-size:16px; font-weight:700;
     border:none; background:var(--green); color:#fff; cursor:pointer; font-family:inherit;
     box-shadow:0 2px 8px rgba(79,175,59,.3)}
@@ -261,6 +278,7 @@ const api = {
   // волонтёры
   async vReg(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'register'},d))}); },
   async vLogin(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'login'},d))}); },
+  async vUpdate(d){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'update'},d))}); },
   async tgLink(){ return fetch('/api/volunteers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'tglink',phone:me.phone,password:volPass})}); },
   async listVolunteers(){ const r=await fetch('/api/volunteers',{headers:chdr()}); if(r.status!==200) return []; return (await r.json()).volunteers||[]; },
   async volProfile(phone){ const r=await fetch('/api/volunteers?phone='+encodeURIComponent(phone),{headers:chdr()}); if(r.status!==200) return null; return r.json(); },
@@ -298,6 +316,46 @@ function setHeaderSub(){
 }
 
 async function loadEvents(){ state.events = await api.events(); }
+
+// инициалы из имени (для аватарки-заглушки)
+function initials(name){
+  const parts = String(name||'').trim().split(/\s+/).filter(Boolean);
+  if(!parts.length) return '?';
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+// HTML аватарки: фото если есть, иначе инициалы на цветном кружке
+function avaHTML(person, size){
+  const cls = size==='lg' ? 'ava lg' : 'ava sm';
+  if(person && person.avatar){ return `<div class="${cls}"><img src="${esc(person.avatar)}" alt=""></div>`; }
+  return `<div class="${cls}">${esc(initials(person && person.name))}</div>`;
+}
+// выбрать фото с устройства, сжать до 256px квадрата, вернуть data-URL (base64)
+function pickImage(){
+  return new Promise(resolve=>{
+    const inp=document.createElement('input');
+    inp.type='file'; inp.accept='image/*';
+    inp.onchange=()=>{
+      const file=inp.files && inp.files[0];
+      if(!file){ resolve(null); return; }
+      const reader=new FileReader();
+      reader.onload=()=>{
+        const img=new Image();
+        img.onload=()=>{
+          const S=256; const c=document.createElement('canvas'); c.width=S; c.height=S;
+          const ctx=c.getContext('2d');
+          const m=Math.min(img.width,img.height);
+          ctx.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,S,S);
+          resolve(c.toDataURL('image/jpeg',0.8));
+        };
+        img.onerror=()=>resolve(null);
+        img.src=reader.result;
+      };
+      reader.onerror=()=>resolve(null);
+      reader.readAsDataURL(file);
+    };
+    inp.click();
+  });
+}
 
 // событие -> картинка-заглушка или реальная (когда появится поле image)
 function eventImg(e){
@@ -572,14 +630,17 @@ function renderProfile(){
   el.innerHTML = `
     <div class="card" style="margin-top:8px">
       <div style="display:flex;align-items:center;gap:14px">
-        <div class="avatar"><svg width="32" height="32" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.5" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 20c0-3.9 3.4-6.5 7.5-6.5s7.5 2.6 7.5 6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+        <div class="ava-edit" id="my-ava-wrap">${avaHTML(me,'lg')}<span class="cam">📷</span></div>
         <div style="flex:1">
           <div style="font-weight:800;font-size:18px">${esc(me.name)}</div>
           <div class="muted" style="margin-top:2px">${esc(me.phone)}</div>
           ${me.birthday?`<div class="muted" style="margin-top:2px">День рождения: ${fmtDateFull(me.birthday)}</div>`:''}
         </div>
       </div>
-      <button class="btn ghost small" id="logout" style="margin-top:12px">Выйти</button>
+      <div class="row" style="margin-top:12px">
+        <button class="btn ghost small" id="my-edit" style="flex:1">Редактировать</button>
+        <button class="btn ghost small" id="logout" style="flex:1">Выйти</button>
+      </div>
     </div>
     <div class="card">
       <div style="font-weight:800;font-size:15px;margin-bottom:4px">🔔 Уведомления в Telegram</div>
@@ -592,6 +653,35 @@ function renderProfile(){
     ${vol.mySignups.length?cards:'<div class="card center muted">Вы ещё никуда не записались.</div>'}` + volNav();
 
   document.getElementById('logout').onclick=()=>{ me=null; volPass=null; localStorage.removeItem(VOL_KEY); vol={eventId:'',view:'list',day:'all',vtab:'events',mySignups:[],vauth:'login'}; state.role=null; render(); };
+  // загрузка своей аватарки
+  const avaWrap=document.getElementById('my-ava-wrap');
+  if(avaWrap) avaWrap.onclick=async()=>{
+    const img=await pickImage(); if(!img) return;
+    const r=await api.vUpdate({phone:me.phone, password:volPass, avatar:img});
+    if(r.ok){ const d=await r.json(); me=d.profile; render(); }
+  };
+  // форма редактирования своего профиля
+  const editBtn=document.getElementById('my-edit');
+  if(editBtn) editBtn.onclick=()=>{
+    showModalForm('Редактирование профиля', `
+      <label><span>Имя и фамилия</span><input id="me-name" value="${esc(me.name)}"></label>
+      <label><span>Дата рождения</span><input id="me-bday" type="date" value="${esc(me.birthday||'')}"></label>
+      <label><span>Новый пароль (необязательно)</span><input id="me-pass" type="password" placeholder="оставьте пустым, чтобы не менять"></label>
+    `, async ()=>{
+      const name=document.getElementById('me-name').value.trim();
+      const bday=document.getElementById('me-bday').value;
+      const np=document.getElementById('me-pass').value;
+      if(!name) return false;
+      const payload={phone:me.phone, password:volPass, name, birthday:bday||null};
+      if(np) payload.newPassword=np;
+      const r=await api.vUpdate(payload);
+      if(r.ok){ const d=await r.json(); me=d.profile; if(np) volPass=np;
+        // обновим сохранённую сессию, если пароль сменился
+        try{ const s=JSON.parse(localStorage.getItem(VOL_KEY)||'null'); if(s){ s.pass=volPass; localStorage.setItem(VOL_KEY, JSON.stringify(s)); } }catch(_){}
+        render(); return true; }
+      return false;
+    });
+  };
   const tg=document.getElementById('tg-link');
   if(tg) tg.onclick=async()=>{
     tg.disabled=true; tg.textContent='Подождите…';
@@ -620,9 +710,31 @@ function showModal(title, text, btnText){
   bg.querySelector('#modal-ok').onclick=close;
   bg.onclick=e=>{ if(e.target===bg) close(); };
 }
+// модалка с произвольной формой; onSave() возвращает true чтобы закрыть, false — оставить открытой
+function showModalForm(title, innerHTML, onSave){
+  document.getElementById('modal-bg')?.remove();
+  const bg=document.createElement('div'); bg.id='modal-bg'; bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal" style="text-align:left">
+    <div class="modal-ttl" style="text-align:center">${title}</div>
+    <div style="margin:14px 0">${innerHTML}</div>
+    <div class="err" id="modal-err" style="display:none;margin-bottom:10px"></div>
+    <div class="row"><button class="btn" id="modal-save">Сохранить</button>
+    <button class="btn ghost" id="modal-cancel">Отмена</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close=()=>bg.remove();
+  bg.querySelector('#modal-cancel').onclick=close;
+  bg.onclick=e=>{ if(e.target===bg) close(); };
+  bg.querySelector('#modal-save').onclick=async()=>{
+    const btn=bg.querySelector('#modal-save'); btn.disabled=true; btn.textContent='Сохраняю…';
+    const ok=await onSave();
+    if(ok){ close(); } else { btn.disabled=false; btn.textContent='Сохранить';
+      const e=bg.querySelector('#modal-err'); e.textContent='Проверьте поля и попробуйте снова'; e.style.display='block'; }
+  };
+}
 
 // ---------- COORDINATOR ----------
-let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null, q:'', limit:20, teamTab:'volunteers', teamQ:'', viewUser:null };
+let coord = { tab:'people', filter:'all', err:'', editing:null, editingVol:null, q:'', limit:20, teamTab:'volunteers', teamQ:'', viewUser:null, showAddEvent:false };
 function renderCoordinator(){
   if(!coordAuth){ renderCoordLogin(); return; }
   el.innerHTML = `<div class="loading">Загрузка…</div>`;
@@ -764,10 +876,13 @@ function drawCoordinator(){
       }
       const hasScan = e.scan_login||e.scan_pass;
       const past = isPastEvent(e);
-      return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px${past?';opacity:.6':''}">
-      <div><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
+      return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px${past?';opacity:.6':''}">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <div class="coord-poster">${eventImg(e)}</div>
+        <div style="min-width:0"><div style="font-weight:800;font-size:16px">${esc(e.title)}</div>
         <div class="muted">${e.date?fmtDate(e.date)+' · ':''}нужно ${e.need}, записано ${+e.taken||0}${e.source==='auto'?' · авто':''}</div>
         ${hasScan?'<div class="muted" style="margin-top:2px;font-size:12px">🔑 сканер задан</div>':''}</div>
+      </div>
       <div style="display:flex;gap:6px;flex:0 0 auto">
         <button class="btn small ghost" data-edit="${esc(e.id)}">Изменить</button>
         <button class="btn small danger" data-del="${esc(e.id)}">Удалить</button>
@@ -781,10 +896,12 @@ function drawCoordinator(){
       ${upcoming.length?upcoming.map(evCardCoord).join(''):'<div class="card center muted">Нет предстоящих событий.</div>'}
       ${past.length?`<div class="section-label" style="margin-top:8px">Прошедшие (${past.length}):</div>${past.map(evCardCoord).join('')}`:''}`;
     el.innerHTML = stats + subtabs + `
-      <button class="btn ghost" id="sync" style="margin-bottom:12px">Загрузить события с Ticketon</button>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn ghost" id="sync" style="flex:1">Обновить события</button>
+        <button class="btn" id="toggle-add" style="flex:1">${coord.showAddEvent?'✕ Закрыть':'+ Добавить событие'}</button>
+      </div>
       <div class="err" id="sync-msg" style="display:none"></div>
-      ${evs}
-      <div class="card"><h3 style="margin:0 0 12px;font-size:16px">Новое событие</h3>
+      <div class="card" id="add-event-form" style="display:${coord.showAddEvent?'block':'none'}"><h3 style="margin:0 0 12px;font-size:16px">Новое событие</h3>
         <label><span>Название</span><input id="e-title" placeholder="Концерт, спектакль…"></label>
         <label><span>Дата</span><input id="e-date" type="date"></label>
         <label><span>Время (необязательно)</span><input id="e-time" type="time"></label>
@@ -793,13 +910,19 @@ function drawCoordinator(){
         <label><span>Логин сканера билетов (необязательно)</span><input id="e-slogin" placeholder="логин для приложения-сканера"></label>
         <label><span>Пароль сканера билетов (необязательно)</span><input id="e-spass" placeholder="пароль для приложения-сканера"></label>
         <button class="btn" id="e-add">Добавить событие</button>
-      </div>`;
+      </div>
+      ${evs}`;
+    document.getElementById('toggle-add').onclick=()=>{ coord.showAddEvent=!coord.showAddEvent; drawCoordinator(); };
     document.getElementById('sync').onclick=async()=>{
-      const m=document.getElementById('sync-msg'); m.style.display='block'; m.style.color='var(--sub)'; m.textContent='Собираю события…';
-      const r=await api.sync(); const j=await r.json();
-      m.textContent = j.ok ? `Готово: добавлено ${j.added}, всего на афише ${j.total}.` : (j.note||'Не получилось.');
-      state.events=await api.eventsCoord(); state.signups=await api.listSignups();
-      setTimeout(drawCoordinator,1200);
+      const btn=document.getElementById('sync'); btn.disabled=true; btn.textContent='Обновляю…';
+      const before=state.events.length;
+      state.events=await api.eventsCoord();
+      const after=state.events.length;
+      const diff=after-before;
+      const msg = diff>0 ? `Добавлено новых: ${diff}. Всего на афише: ${after}.`
+                : `Все события уже загружены. Всего на афише: ${after}.`;
+      showModal('Готово', msg, 'Понятно');
+      drawCoordinator();
     };
     document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{ await api.delEvent(b.dataset.del); state.events=await api.eventsCoord(); drawCoordinator(); });
     document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ coord.editing=b.dataset.edit; drawCoordinator(); });
@@ -826,7 +949,7 @@ function drawCoordinator(){
       const scan_login=document.getElementById('e-slogin').value.trim();
       const scan_pass=document.getElementById('e-spass').value.trim();
       if(!title){ return; }
-      await api.addEvent({title,date:date||null,time:time||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); state.events=await api.eventsCoord(); drawCoordinator();
+      await api.addEvent({title,date:date||null,time:time||null,place:place||null,need,scan_login:scan_login||null,scan_pass:scan_pass||null}); coord.showAddEvent=false; state.events=await api.eventsCoord(); drawCoordinator();
     };
   } else if(coord.tab==='team') {
     el.innerHTML = stats + subtabs + `<div id="team-zone"></div>`;
@@ -903,22 +1026,17 @@ async function drawTeam(){
       let list = vols;
       if(q) list = vols.filter(v=>(v.name||'').toLowerCase().includes(q)||(v.phone||'').toLowerCase().includes(q));
       listEl.innerHTML = list.length ? list.map(v=>`
-        <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-          <button class="user-open" data-uphone="${esc(v.phone)}" style="flex:1;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;padding:0">
-            <div style="font-weight:800;font-size:16px;color:var(--ink)">${esc(v.name)}</div>
-            <div class="muted">${esc(v.phone)}</div>
+        <div class="card" style="display:flex;align-items:center;gap:12px">
+          <button class="user-open" data-uphone="${esc(v.phone)}" style="flex:1;display:flex;align-items:center;gap:12px;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;padding:0">
+            ${avaHTML(v)}
+            <div>
+              <div style="font-weight:800;font-size:16px;color:var(--ink)">${esc(v.name)}</div>
+              <div class="muted">${esc(v.phone)}</div>
+            </div>
           </button>
-          <div style="display:flex;gap:6px;flex:0 0 auto">
-            <button class="icon-btn" data-uedit="${esc(v.phone)}" title="Редактировать">✏️</button>
-            <button class="icon-btn" data-udel="${esc(v.phone)}" title="Удалить">🗑️</button>
-          </div>
+          <button class="icon-btn" data-udel="${esc(v.phone)}" title="Удалить" style="flex:0 0 auto">🗑️</button>
         </div>`).join('') : '<div class="card center muted">Никого не найдено.</div>';
       listEl.querySelectorAll('.user-open').forEach(b=>b.onclick=()=>{ coord.viewUser=b.dataset.uphone; drawCoordinator(); });
-      listEl.querySelectorAll('[data-uedit]').forEach(b=>b.onclick=async()=>{
-        const phone=b.dataset.uedit; const v=vols.find(x=>x.phone===phone);
-        const nn=prompt('Имя волонтёра:', v?v.name:''); if(nn===null) return;
-        await api.patchVolunteer({phone,name:nn.trim()}); drawCoordinator();
-      });
       listEl.querySelectorAll('[data-udel]').forEach(b=>b.onclick=async()=>{
         const phone=b.dataset.udel; if(!confirm('Удалить волонтёра '+phone+'? Его записи тоже удалятся.')) return;
         await api.delVolunteer(phone); drawCoordinator();
@@ -955,9 +1073,27 @@ async function drawUserProfile(zone, phone){
   zone.innerHTML = `
     <button class="back-btn" id="up-back">‹ К списку</button>
     <div class="card">
-      <div style="font-weight:800;font-size:20px">${esc(p.name)}</div>
-      <div class="muted" style="margin-top:2px">${esc(p.phone)}</div>
-      ${p.birthday?`<div class="muted" style="margin-top:2px">🎂 ${fmtDateFull(p.birthday)}${birthdayAge(p.birthday)}</div>`:''}
+      <div style="display:flex;align-items:center;gap:14px">
+        <div class="ava-edit" id="up-ava-wrap">${avaHTML(p,'lg')}<span class="cam">📷</span></div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:20px">${esc(p.name)}</div>
+          <div class="muted" style="margin-top:2px">${esc(p.phone)}</div>
+          ${p.birthday?`<div class="muted" style="margin-top:2px">🎂 ${fmtDateFull(p.birthday)}${birthdayAge(p.birthday)}</div>`:''}
+        </div>
+      </div>
+      <button class="btn ghost small" id="up-edit" style="margin-top:12px">Редактировать данные</button>
+    </div>
+    <div class="card" id="up-edit-form" style="display:none">
+      <h3 style="margin:0 0 12px;font-size:16px">Редактирование</h3>
+      <label><span>Имя и фамилия</span><input id="up-name" value="${esc(p.name)}"></label>
+      <label><span>Телефон</span><input value="${esc(p.phone)}" disabled style="opacity:.6"></label>
+      <label><span>Дата рождения</span><input id="up-bday" type="date" value="${esc(p.birthday||'')}"></label>
+      <label><span>Новый пароль (необязательно)</span><input id="up-pass" type="password" placeholder="оставьте пустым, чтобы не менять"></label>
+      <div class="err" id="up-err" style="display:none"></div>
+      <div class="row">
+        <button class="btn small" id="up-save">Сохранить</button>
+        <button class="btn small ghost" id="up-cancel">Отмена</button>
+      </div>
     </div>
     <div class="stats">
       <div class="stat"><b>${approved.length}</b><span>событий</span></div>
@@ -971,6 +1107,27 @@ async function drawUserProfile(zone, phone){
     <div class="section-label">История участия:</div>
     ${history}`;
   zone.querySelector('#up-back').onclick=()=>{ coord.viewUser=null; drawCoordinator(); };
+
+  // загрузка аватарки координатором
+  zone.querySelector('#up-ava-wrap').onclick=async()=>{
+    const img=await pickImage(); if(!img) return;
+    await api.patchVolunteer({phone:p.phone, avatar:img});
+    drawUserProfile(zone, phone);
+  };
+  // показать/скрыть форму редактирования
+  const form=zone.querySelector('#up-edit-form');
+  zone.querySelector('#up-edit').onclick=()=>{ form.style.display = form.style.display==='none' ? 'block' : 'none'; };
+  zone.querySelector('#up-cancel').onclick=()=>{ form.style.display='none'; };
+  zone.querySelector('#up-save').onclick=async()=>{
+    const name=zone.querySelector('#up-name').value.trim();
+    const bday=zone.querySelector('#up-bday').value;
+    const np=zone.querySelector('#up-pass').value;
+    if(!name){ const e=zone.querySelector('#up-err'); e.textContent='Имя не может быть пустым'; e.style.display='block'; return; }
+    const payload={phone:p.phone, name, birthday:bday||null};
+    if(np) payload.newPassword=np;
+    await api.patchVolunteer(payload);
+    drawUserProfile(zone, phone);
+  };
 }
 
 // возраст в скобках по дате рождения
