@@ -51,6 +51,7 @@ export async function ensureSchema() {
   // Telegram: chat_id for notifications and a temporary linking code
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_chat_id TEXT`;
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_code TEXT`;
+  await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS avatar TEXT`;
   // named coordinator accounts (login + password hash)
   await sql`
     CREATE TABLE IF NOT EXISTS coordinators (
