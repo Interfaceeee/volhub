@@ -86,7 +86,22 @@ async function fetchTicketonEvents() {
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
+      await ensureSchema();
       const events = await fetchTicketonEvents();
+      // подтягиваем реальные счётчики записей из базы по всем событиям разом
+      try {
+        const counts = await sql`
+          SELECT event_id,
+            COUNT(*) FILTER (WHERE status <> 'rejected') AS taken,
+            COUNT(*) FILTER (WHERE status = 'approved') AS approved_count
+          FROM signups GROUP BY event_id`;
+        const byEvent = {};
+        for (const c of counts) byEvent[String(c.event_id)] = c;
+        for (const ev of events) {
+          const c = byEvent[String(ev.id)];
+          if (c) { ev.taken = Number(c.taken) || 0; ev.approved_count = Number(c.approved_count) || 0; }
+        }
+      } catch (e) { console.error('count signups failed:', e); }
       // сортировка по дате (без даты — в конец)
       events.sort((a, b) => {
         if (!a.date) return 1;
