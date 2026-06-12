@@ -15,10 +15,10 @@ function normPhone(p) {
 
 // собрать профиль + записи волонтёра (сканер только по подтверждённым)
 async function profileWithSignups(phone) {
-  const prof = await sql`SELECT phone, name, birthday, tg_chat_id FROM volunteers WHERE phone = ${phone}`;
+  const prof = await sql`SELECT phone, name, birthday, tg_chat_id, avatar FROM volunteers WHERE phone = ${phone}`;
   if (!prof.length) return null;
   const p = prof[0];
-  const profile = { phone: p.phone, name: p.name, birthday: p.birthday, tg_linked: !!p.tg_chat_id };
+  const profile = { phone: p.phone, name: p.name, birthday: p.birthday, avatar: p.avatar || null, tg_linked: !!p.tg_chat_id };
   const rows = await sql`
     SELECT s.id, s.status, s.badge, s.vest, s.event_id,
            e.title, e.date, e.place,
@@ -49,9 +49,25 @@ export default async function handler(req, res) {
       }
       const hash = hashPassword(password);
       await sql`
-        INSERT INTO volunteers (phone, name, birthday, pass_hash)
-        VALUES (${phone}, ${name}, ${b.birthday || null}, ${hash})
+        INSERT INTO volunteers (phone, name, birthday, pass_hash, avatar)
+        VALUES (${phone}, ${name}, ${b.birthday || null}, ${hash}, ${b.avatar || null})
         ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, birthday = EXCLUDED.birthday, pass_hash = EXCLUDED.pass_hash`;
+      return res.status(200).json(await profileWithSignups(phone));
+    }
+
+    // обновление собственного профиля волонтёром (нужен пароль для подтверждения)
+    if (action === 'update') {
+      const password = b.password || '';
+      const rows = await sql`SELECT pass_hash FROM volunteers WHERE phone = ${phone}`;
+      if (!rows.length || !verifyPassword(password, rows[0].pass_hash)) return res.status(401).json({ error: 'Неверный пароль' });
+      await sql`
+        UPDATE volunteers
+        SET name = COALESCE(${b.name ?? null}, name),
+            birthday = COALESCE(${b.birthday ?? null}, birthday),
+            avatar = COALESCE(${b.avatar ?? null}, avatar)
+        WHERE phone = ${phone}`;
+      if (b.name) await sql`UPDATE signups SET name = ${b.name} WHERE phone = ${phone}`;
+      if (b.newPassword) await sql`UPDATE volunteers SET pass_hash = ${hashPassword(b.newPassword)} WHERE phone = ${phone}`;
       return res.status(200).json(await profileWithSignups(phone));
     }
 
@@ -84,7 +100,7 @@ export default async function handler(req, res) {
     // если передан ?phone= — отдаём полный профиль одного волонтёра с историей и инвентарём
     const onePhone = (req.query.phone || '').trim();
     if (onePhone) {
-      const prof = await sql`SELECT phone, name, birthday FROM volunteers WHERE phone = ${onePhone}`;
+      const prof = await sql`SELECT phone, name, birthday, avatar FROM volunteers WHERE phone = ${onePhone}`;
       if (!prof.length) return res.status(404).json({ error: 'Профиль не найден' });
       const rows = await sql`
         SELECT s.id, s.status, s.badge, s.vest, s.event_id, e.title, e.date, e.place
@@ -93,7 +109,7 @@ export default async function handler(req, res) {
         ORDER BY e.date NULLS LAST`;
       return res.status(200).json({ profile: prof[0], signups: rows });
     }
-    const vols = await sql`SELECT phone, name, birthday FROM volunteers ORDER BY name`;
+    const vols = await sql`SELECT phone, name, birthday, avatar FROM volunteers ORDER BY name`;
     return res.status(200).json({ volunteers: vols });
   }
 
@@ -103,11 +119,12 @@ export default async function handler(req, res) {
     const b = await readBody(req);
     const phone = normPhone(b.phone);
     if (!phone) return res.status(400).json({ error: 'Нужен телефон' });
-    if (b.name !== undefined || b.birthday !== undefined) {
+    if (b.name !== undefined || b.birthday !== undefined || b.avatar !== undefined) {
       await sql`
         UPDATE volunteers
         SET name = COALESCE(${b.name ?? null}, name),
-            birthday = COALESCE(${b.birthday ?? null}, birthday)
+            birthday = COALESCE(${b.birthday ?? null}, birthday),
+            avatar = COALESCE(${b.avatar ?? null}, avatar)
         WHERE phone = ${phone}`;
       if (b.name) await sql`UPDATE signups SET name = ${b.name} WHERE phone = ${phone}`;
     }
