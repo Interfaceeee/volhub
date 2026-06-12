@@ -71,6 +71,18 @@
   .ecard .foot{margin-top:8px}
   .egrid{display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start}
   .search-wrap{margin:4px 0 10px}
+  .page-head{display:flex; align-items:center; justify-content:space-between; gap:10px}
+  .help-btn{flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:1.5px solid var(--green-line);
+    background:var(--card); color:var(--green-dark); font-size:18px; font-weight:800; cursor:pointer; font-family:inherit; line-height:1}
+  .help-sec{background:var(--card); border:1.5px solid var(--green-line); border-radius:16px; padding:16px; margin-bottom:12px}
+  .help-h{font-weight:800; font-size:16px; margin-bottom:8px}
+  .help-list{margin:0; padding-left:20px} .help-list li{margin-bottom:8px; line-height:1.45}
+  .help-mode{padding:8px 0; border-bottom:1px solid var(--green-line); line-height:1.4; font-size:14px}
+  .help-mode:last-child{border-bottom:none}
+  .help-st{padding:8px 12px; border-radius:10px; margin-bottom:6px; font-size:14px}
+  .help-st.ok{background:var(--green-soft)} .help-st.bad{background:#FBEAEA}
+  .help-faq{padding:10px 0; border-bottom:1px solid var(--green-line); line-height:1.45; font-size:14px}
+  .help-faq:last-child{border-bottom:none}
   .cat-row{display:flex; gap:8px; overflow-x:auto; padding:2px 2px 12px; scrollbar-width:none}
   .cat-row::-webkit-scrollbar{display:none}
   .cat-chip{flex:0 0 auto; padding:8px 16px; border-radius:20px; border:1.5px solid var(--green-line);
@@ -442,13 +454,92 @@ function renderVolunteer(){
   if(!me){ renderLogin(); return; }
   if(vol.view==='done'){ renderDone(); return; }
   if(vol.view==='event'){ renderEventPage(); return; }
+  if(vol.view==='help'){ renderHelp(); return; }
   if(vol.vtab==='profile'){ renderProfile(); return; }
   renderList();
 }
 
+// экран помощи волонтёру: сканер, режимы, статусы, FAQ, WhatsApp
+function renderHelp(){
+  const PLAY='https://play.google.com/store/apps/details?id=kz.ticketon.scanner_b2b&hl=ru';
+  const APPSTORE='https://apps.apple.com/kz/app/%D1%81%D0%BA%D0%B0%D0%BD%D0%B5%D1%80-freedom-ticketon-2-0/id6753947376';
+  const WHATSAPP='https://chat.whatsapp.com/DdQRNW9XP2D9cIFLgxo3dM?mode=gi_t';
+  el.innerHTML = `
+    <div class="page-head"><button class="back-btn" id="help-back">‹ Назад</button></div>
+    <h1 class="page-title" style="margin:6px 0 4px">Помощь волонтёру</h1>
+    <p class="muted" style="margin:0 0 16px">Как сканировать билеты на входе</p>
+
+    <div class="help-sec">
+      <div class="help-h">📲 Установите приложение сканера</div>
+      <p class="muted" style="margin:0 0 10px">Скачайте «Сканер Freedom Ticketon 2.0» на телефон, с которого будете проверять билеты.</p>
+      <a class="btn" href="${PLAY}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px">Google Play</a>
+      <a class="btn" href="${APPSTORE}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">App Store</a>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">Требования: iOS 15+ или Android 9+, рабочая камера и интернет.</p>
+    </div>
+
+    <div class="help-sec">
+      <div class="help-h">▶️ С чего начать</div>
+      <ol class="help-list">
+        <li>Войдите в приложение сканера и выберите своё событие из списка (или через поиск).</li>
+        <li>Нажмите «QR-сканер» и наведите камеру на QR-код билета. Держите экран в 10–15 см от кода.</li>
+        <li>Смотрите на цвет статуса: <b style="color:var(--green-dark)">зелёный — пускать</b>, <b style="color:#D64545">красный — не пускать</b>.</li>
+      </ol>
+    </div>
+
+    <div class="help-sec">
+      <div class="help-h">🔢 Если QR не считывается</div>
+      <p class="muted" style="margin:0">Нажмите «Ручной ввод», впишите код билета (он напечатан рядом с QR) и нажмите «Проверить».</p>
+    </div>
+
+    <div class="help-sec">
+      <div class="help-h">⚙️ Три режима сканера</div>
+      <div class="help-mode"><b>Вход</b> — основной режим. Активирует билет и регистрирует проход. Включён по умолчанию.</div>
+      <div class="help-mode"><b>Выход</b> — только если разрешён повторный вход (антракт, фуд-корт снаружи). Отмечает, что зритель вышел.</div>
+      <div class="help-mode"><b>Инфо</b> — проверка билета без активации. Для спорных ситуаций, VIP-входа, контроля рассадки.</div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">⚠️ После проверки в «Инфо» вернитесь в «Вход», иначе проходы не засчитываются.</p>
+    </div>
+
+    <div class="help-sec">
+      <div class="help-h">🟢 Зелёные статусы — пускать</div>
+      <div class="help-st ok"><b>Вход разрешён</b> — билет валиден, первое сканирование.</div>
+      <div class="help-st ok"><b>Повторный вход</b> — зритель выходил и возвращается.</div>
+      <div class="help-st ok"><b>Выход разрешён</b> — зритель временно вышел.</div>
+      <div class="help-st ok"><b>Билет действителен</b> — проверка в «Инфо», проход не засчитан.</div>
+    </div>
+
+    <div class="help-sec">
+      <div class="help-h">🔴 Красные статусы — не пускать</div>
+      <p class="muted" style="margin:0 0 10px;font-size:13px">Во всех этих случаях направьте посетителя к ответственному сотруднику.</p>
+      <div class="help-st bad"><b>По билету уже прошли</b> — билет уже отсканирован раньше.</div>
+      <div class="help-st bad"><b>Билет на другой сеанс</b> — оформлен на другое время или дату.</div>
+      <div class="help-st bad"><b>Билет возвращён</b> — зритель вернул билет, деньги возвращены.</div>
+      <div class="help-st bad"><b>Билет не продан / отменён</b> — заказ не оплачен или отменён.</div>
+      <div class="help-st bad"><b>Неверный код билета</b> — не найден в базе, возможно чужой QR.</div>
+      <div class="help-st bad"><b>Выход запрещён</b> — по билету уже зарегистрирован выход.</div>
+      <div class="help-st bad"><b>Вне времени входа</b> — сканирование вне разрешённого окна.</div>
+      <div class="help-st bad"><b>Ошибка валидации</b> — неизвестная ошибка при проверке.</div>
+    </div>
+
+    <div class="help-sec">
+      <div class="help-h">❓ Частые вопросы</div>
+      <div class="help-faq"><b>QR не считывается?</b><br>Протрите камеру, держите 10–15 см от кода, при ярком свете уберите блики. Не помогло — «Ручной ввод».</div>
+      <div class="help-faq"><b>«По билету уже прошли», но зритель спорит?</b><br>Переключитесь в режим «Инфо» и отсканируйте снова — увидите время первого прохода.</div>
+      <div class="help-faq"><b>У зрителя нет билета, только чек?</b><br>Билет иногда не приходит на почту. Сфотографируйте чек и отправьте в WhatsApp-группу волонтёров — там подскажут.</div>
+      <div class="help-faq"><b>Нет нужного события в списке?</b><br>Обратитесь к старшему валидатору / координатору.</div>
+    </div>
+
+    <div class="help-sec" style="background:var(--green-soft);border-color:var(--green-line)">
+      <div class="help-h">💬 Группа волонтёров в WhatsApp</div>
+      <p class="muted" style="margin:0 0 10px">Вопросы, спорные билеты, чеки без билета — пишите сюда.</p>
+      <a class="btn" href="${WHATSAPP}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Открыть группу WhatsApp</a>
+    </div>
+  ` + volNav();
+  document.getElementById('help-back').onclick=()=>{ vol.view='list'; render(); };
+  bindVolNav();
+}
+
 // нижние вкладки волонтёра: Главная / Достижения / Профиль (с иконками)
-function volNav(){
-  const onHome = vol.vtab==='events' && vol.view!=='event';
+function volNav(){  const onHome = vol.vtab==='events' && vol.view!=='event';
   const onProf = vol.vtab==='profile';
   const icoHome = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9.5V20h14V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   const icoAward = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="9" r="5" stroke="currentColor" stroke-width="1.8"/><path d="M9 13l-1.5 7L12 17l4.5 3L15 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -580,9 +671,12 @@ function renderList(){
   const signedIds = new Set(vol.mySignups.map(s=>String(s.event_id)));
   const evCards = shown.map(e=>eventCardHTML(e, signedIds)).join('');
 
-  el.innerHTML = `<h1 class="page-title">Все события</h1>` + calHtml + catChips +
+  el.innerHTML = `<div class="page-head"><h1 class="page-title" style="margin:0">Все события</h1><button class="help-btn" id="vol-help" title="Помощь волонтёру">?</button></div>` + calHtml + catChips +
     `<div class="search-wrap"><input id="ev-search" class="search" placeholder="Поиск события…" value="${esc(vol.q)}"></div>
     <div class="egrid">${shown.length?evCards:'<div class="card center muted" style="grid-column:1/-1">Пока нет предстоящих событий.</div>'}</div>` + volNav();
+
+  const helpBtn=document.getElementById('vol-help');
+  if(helpBtn) helpBtn.onclick=()=>{ vol.view='help'; window.scrollTo(0,0); render(); };
 
   document.querySelectorAll('.cat-chip').forEach(c=>c.onclick=()=>{ vol.cat=c.dataset.cat; render(); });
 
