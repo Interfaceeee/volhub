@@ -52,6 +52,7 @@ export async function ensureSchema() {
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_chat_id TEXT`;
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS tg_code TEXT`;
   await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS avatar TEXT`;
+  await sql`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS bonus_points INTEGER DEFAULT 0`;
   // named coordinator accounts (login + password hash)
   await sql`
     CREATE TABLE IF NOT EXISTS coordinators (
