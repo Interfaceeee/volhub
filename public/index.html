@@ -33,8 +33,10 @@
   main{padding:12px 16px 48px}
 
   /* calendar strip */
-  .cal{display:flex; gap:10px; overflow-x:auto; padding:4px 2px 14px; scrollbar-width:none; align-items:center}
+  .cal{display:flex; gap:10px; overflow-x:auto; padding:4px 2px 14px; scrollbar-width:none; align-items:flex-end}
   .cal::-webkit-scrollbar{display:none}
+  .cal-col{flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:4px}
+  .cal-mon{font-size:13px; font-weight:700; color:var(--month); height:16px; white-space:nowrap}
   .cal-day{flex:0 0 auto; width:47px; height:51px; border-radius:16px; text-align:center;
     background:var(--card); border:1.5px solid var(--green-line); cursor:pointer; transition:.12s;
     display:flex; flex-direction:column; align-items:center; justify-content:center}
@@ -46,7 +48,6 @@
   .cal-day.alldays .dn{font-size:16px; font-weight:700; color:var(--ink)}
   .cal-day.alldays.active{background:var(--green); border-color:var(--green)}
   .cal-day.alldays.active .dn{color:#fff}
-  .cal-months{display:flex; gap:0; font-size:16px; font-weight:700; color:var(--month); margin:6px 2px 2px}
 
   /* event card */
   .ecard{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden;
@@ -63,6 +64,7 @@
   .ecard .meta-date{font-size:14px; margin-top:5px}
   .ecard .meta-date b{font-weight:700; color:#000}
   .ecard .meta-date span{color:#000; font-weight:400}
+  .ecard .meta-time{font-size:13px; margin-top:4px; color:var(--green-dark); font-weight:700}
   .ecard .meta-place{display:inline-block; max-width:100%; margin-top:10px; padding:8px 12px;
     background:var(--place-bg); color:#000; font-size:10px; font-weight:700;
     border-radius:14px 14px 14px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -309,6 +311,16 @@ const WDF=['воскресенье','понедельник','вторник','�
 function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MO[+m-1]} ${y}`; }
 function fmtDateFull(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${+d} ${MOF[+m-1]}`; }
 function weekday(iso){ if(!iso) return ''; return WDF[new Date(iso).getDay()]; }
+// время прихода волонтёра — на 90 минут раньше начала события (формат HH:MM)
+function arriveTime(t){
+  if(!t) return '';
+  const m = String(t).match(/^(\d{1,2}):(\d{2})/);
+  if(!m) return '';
+  let mins = (+m[1])*60 + (+m[2]) - 90;
+  if(mins < 0) mins += 24*60;
+  const h = Math.floor(mins/60)%24, mm = mins%60;
+  return String(h).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+}
 // событие прошло, если его дата+время уже позади. Без времени — конец того дня. Без даты — не прошло.
 function isPast(iso, time){
   if(!iso) return false;
@@ -401,7 +413,13 @@ function hydratePosters(root){
     const ev = state.events.find(x=>x.slug===slug || x.id===box.getAttribute('data-poster-id'));
     if(ev) ev.image = url;
     const img = new Image();
-    img.onload = ()=>{ box.innerHTML = `<img src="${url}" alt="">`; };
+    img.onload = ()=>{
+      // сохраняем уже имеющиеся оверлеи (бейдж категории) — заменяем только заглушку
+      const overlays = [...box.children].filter(c=>c.tagName!=='IMG' && c.tagName!=='SVG');
+      box.querySelectorAll('img, svg').forEach(n=>n.remove());
+      const im = document.createElement('img'); im.src = url; im.alt = '';
+      box.insertBefore(im, box.firstChild);
+    };
     img.src = url;
   });
 }
@@ -508,6 +526,7 @@ function eventCardHTML(e, signedIds){
     <div class="body">
       <div class="ttl">${esc(e.title)}</div>
       ${e.date?`<div class="meta-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
+      ${e.time?`<div class="meta-time">⏰ прийти к ${arriveTime(e.time)}</div>`:''}
       ${mine?'<span class="meta-place" style="background:var(--green-soft);color:var(--green-dark)">✓ Вы записаны</span>':(e.place?`<span class="meta-place">${esc(e.place)}</span>`:'')}
     </div>
   </button>`;
@@ -516,19 +535,26 @@ function renderList(){
   // на главной показываем только актуальные (прошедшие скрываем)
   const upcoming = state.events.filter(e=> !isPastEvent(e));
   const dates = [...new Set(upcoming.map(e=>e.date).filter(Boolean))].sort();
-  // подписи месяцев над лентой (по уникальным месяцам в датах)
-  let monthsHtml = '';
-  const months = [...new Set(dates.map(d=>+d.split('-')[1]))];
-  if(months.length){ monthsHtml = `<div class="cal-months">${months.map(m=>MOF[m-1][0].toUpperCase()+MOF[m-1].slice(1)).join('&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;')}</div>`; }
   let calHtml = '';
   if(dates.length){
-    calHtml = monthsHtml + `<div class="cal">
-      <div class="cal-day alldays ${vol.day==='all'?'active':''}" data-day="all"><span class="dn">Все</span></div>` +
-      dates.map(d=>{
-        const [y,m,day]=d.split('-'); const wd=WD[new Date(d).getDay()];
-        return `<div class="cal-day ${vol.day===d?'active':''}" data-day="${d}">
-          <div class="dn">${+day}</div><div class="wd">${wd}</div></div>`;
-      }).join('') + `</div>`;
+    let lastMonth = null;
+    const dayCells = dates.map(d=>{
+      const [y,m,day]=d.split('-'); const wd=WD[new Date(d).getDay()];
+      const mNum = +m;
+      // подпись месяца показываем только над первым днём этого месяца
+      const showMonth = mNum !== lastMonth;
+      lastMonth = mNum;
+      const monthLabel = showMonth ? MOF[mNum-1][0].toUpperCase()+MOF[mNum-1].slice(1) : '';
+      return `<div class="cal-col">
+        <div class="cal-mon">${monthLabel}</div>
+        <div class="cal-day ${vol.day===d?'active':''}" data-day="${d}">
+          <div class="dn">${+day}</div><div class="wd">${wd}</div></div>
+      </div>`;
+    }).join('');
+    calHtml = `<div class="cal">
+      <div class="cal-col"><div class="cal-mon"></div>
+        <div class="cal-day alldays ${vol.day==='all'?'active':''}" data-day="all"><span class="dn">Все</span></div></div>` +
+      dayCells + `</div>`;
   }
   const q = (vol.q||'').trim().toLowerCase();
   let shown = upcoming.filter(e=> vol.day==='all' || e.date===vol.day);
