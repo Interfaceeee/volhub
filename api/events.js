@@ -64,6 +64,7 @@ async function fetchTicketonEvents() {
         date,
         time,
         place: row.venue_name || row.venue_address || null,
+        address: row.venue_address || null,
         category: row.event_category_name || null,
         slug: row.event_slug || null,
         need: 4,            // дефолт: сколько волонтёров нужно
