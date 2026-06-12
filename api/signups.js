@@ -77,8 +77,11 @@ export default async function handler(req, res) {
           WHERE s.id = ${b.id}`;
         if (rows.length && rows[0].tg_chat_id) {
           const r = rows[0];
-          const evName = r.title || 'мероприятие';
+          const evName = b.eventTitle || r.title || 'мероприятие';
           let text = `✅ <b>Запись подтверждена!</b>\n\nСобытие: <b>${evName}</b>`;
+          if (b.eventDate || r.date) {
+            text += `\nДата: ${b.eventDate || r.date}`;
+          }
           if (r.scan_login || r.scan_pass) {
             text += `\n\n🎫 Доступ к сканеру билетов:\nЛогин: <code>${r.scan_login || '—'}</code>\nПароль: <code>${r.scan_pass || '—'}</code>`;
           }
