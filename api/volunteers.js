@@ -24,9 +24,9 @@ async function profileWithSignups(phone) {
            e.title, e.date, e.place,
            CASE WHEN s.status = 'approved' THEN e.scan_login ELSE NULL END AS scan_login,
            CASE WHEN s.status = 'approved' THEN e.scan_pass  ELSE NULL END AS scan_pass
-    FROM signups s JOIN events e ON e.id = s.event_id
+    FROM signups s LEFT JOIN events e ON e.id = s.event_id
     WHERE s.phone = ${phone}
-    ORDER BY e.date NULLS LAST`;
+    ORDER BY e.date NULLS LAST, s.created_at DESC`;
   return { profile, signups: rows };
 }
 
@@ -104,9 +104,9 @@ export default async function handler(req, res) {
       if (!prof.length) return res.status(404).json({ error: 'Профиль не найден' });
       const rows = await sql`
         SELECT s.id, s.status, s.badge, s.vest, s.event_id, e.title, e.date, e.place
-        FROM signups s JOIN events e ON e.id = s.event_id
+        FROM signups s LEFT JOIN events e ON e.id = s.event_id
         WHERE s.phone = ${onePhone}
-        ORDER BY e.date NULLS LAST`;
+        ORDER BY e.date NULLS LAST, s.created_at DESC`;
       return res.status(200).json({ profile: prof[0], signups: rows });
     }
     const vols = await sql`SELECT phone, name, birthday, avatar FROM volunteers ORDER BY name`;
