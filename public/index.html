@@ -86,25 +86,21 @@
   /* event page */
   .back-btn{background:none; border:none; color:var(--sub); font-size:15px; font-weight:600;
     font-family:inherit; cursor:pointer; padding:4px 0 12px; display:block}
-  .evpage{position:relative; margin:0 -16px 0; background:var(--bg)}
-  .evpage-img{aspect-ratio:1/1.25; max-height:560px; background:linear-gradient(135deg,var(--green),var(--green-dark)); display:flex; align-items:center; justify-content:center;
-    position:relative; z-index:0}
-  .evpage-img img{width:100%; height:100%; object-fit:cover}
-  .evpage-img .ph{color:rgba(255,255,255,.4)}
-  .evpage-time{position:absolute; top:14px; right:16px; background:var(--card); color:var(--green);
-    z-index:3}
-    border:1.5px solid var(--green); font-size:12px; font-weight:700; padding:9px 14px; border-radius:12px}
-  .evpage-sheet{position:relative; z-index:1; background:var(--card); border-radius:24px 24px 0 0; margin-top:-44px; padding:26px 16px 110px; box-shadow:0 -8px 30px rgba(0,0,0,.12)}
-  .evpage-block{border-top:1px solid #E4E6EA; padding:16px 0 0; margin-top:6px}
-  .evpage-block-ttl{font-size:16px; font-weight:800; color:var(--ink)}
-  .evpage-ttl{margin:0 0 18px; font-size:28px; font-weight:800; line-height:1.15; color:#000}
-  .evpage-date{font-size:19px; margin-bottom:16px}
-  .evpage-date b{font-weight:700; color:#000}
-  .evpage-date span{color:#000; font-weight:400}
-  .evpage-row{display:flex; justify-content:space-between; align-items:center; gap:10px;
-    padding:14px 0; border-top:1px solid #E4E6EA}
-  .evpage-label{font-size:14px; font-weight:700; color:var(--sub)}
-  .evpage-place{font-size:16px; font-weight:700; color:#000; text-align:right}
+  .evp{padding:0 0 90px}
+  .evp-poster{aspect-ratio:1/1.3; max-height:520px; background:linear-gradient(135deg,var(--green),var(--green-dark));
+    display:flex; align-items:center; justify-content:center; border-radius:18px; overflow:hidden;
+    border:1px solid var(--line); box-shadow:0 4px 18px rgba(0,0,0,.08)}
+  .evp-poster img{width:100%; height:100%; object-fit:cover}
+  .evp-poster .ph{color:rgba(255,255,255,.4)}
+  .evp-ttl{margin:18px 0 14px; font-size:26px; font-weight:800; line-height:1.15; color:#000}
+  .evp-note{font-size:14px; color:var(--sub); margin-bottom:8px}
+  .evp-note b{color:var(--ink)}
+  .evp-info{margin-top:14px; border-top:1px solid var(--line); padding-top:6px}
+  .evp-line{display:flex; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--line);
+    font-size:16px; font-weight:600; color:var(--ink)}
+  .evp-line:last-child{border-bottom:none}
+  .evp-ico{flex:0 0 auto; width:38px; height:38px; border-radius:10px; background:var(--green-soft);
+    display:flex; align-items:center; justify-content:center; font-size:18px}
   .reg-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin:0 -16px 90px; }
   .reg-ttl{margin:0 0 14px; font-size:16px; font-weight:800; color:var(--ink)}
   .sticky-bar{position:fixed; left:0; right:0; bottom:0; padding:12px 16px;
@@ -208,7 +204,7 @@
   .card { animation: fadeUp .26s ease both; }
 
   /* страница события — выезд снизу */
-  .evpage { animation: slideUp .34s cubic-bezier(.22,.7,.3,1) both; }
+  .evp { animation: slideUp .34s cubic-bezier(.22,.7,.3,1) both; }
   .reg-card { animation: fadeUp .34s ease .06s both; }
 
   /* нажатия — лёгкое «вдавливание» */
@@ -225,7 +221,7 @@
 
   /* уважение к системной настройке «меньше движения» */
   @media (prefers-reduced-motion: reduce){
-    *, #app > *, .egrid .ecard, .card, .evpage, .reg-card, .vnav, .pill { animation:none !important; transition:none !important; }
+    *, #app > *, .egrid .ecard, .card, .evp, .reg-card, .vnav, .pill { animation:none !important; transition:none !important; }
   }
 </style>
 </head>
@@ -560,30 +556,21 @@ function renderEventPage(){
 
   el.innerHTML = `
     <button class="back-btn" id="back">‹ Назад к событиям</button>
-    <div class="evpage">
-      <div class="evpage-img"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}${e.time?`<span class="evpage-time">к ${esc(e.time)}</span>`:''}</div>
-      <div class="evpage-sheet">
-        <h1 class="evpage-ttl">${esc(e.title)}</h1>
-        ${e.date?`<div class="evpage-date"><b>${fmtDateFull(e.date)}</b><span>, ${weekday(e.date)}</span></div>`:''}
-        ${e.place?`<div class="evpage-row"><span class="evpage-label">Место</span><div class="evpage-place">${esc(e.place)}</div></div>`:''}
-        <div class="evpage-row"><span class="evpage-label">Волонтёры</span>
-          <div>${full?'<span class="pill amber">Мест нет</span>':`<span class="pill green">Записано ${approved} из ${e.need}</span>`}</div>
-        </div>
-        ${already
-          ? `<div class="evpage-block">
-              <div class="evpage-block-ttl">Вы уже записаны на это событие</div>
-              <div class="muted" style="margin-top:4px">Статус: <b style="color:var(--ink)">${already.status==='approved'?'подтверждён':'ждёт подтверждения'}</b></div>
-            </div>`
-          : `<div class="evpage-block">
-              <div class="evpage-block-ttl">Записаться волонтёром</div>
-              <div class="muted" style="margin-top:4px">Запишем как <b style="color:var(--ink)">${esc(me.name)}</b> (${esc(me.phone)})</div>
-              <div class="err" id="v-err" style="display:none;margin-top:10px"></div>
-            </div>`}
+    <div class="evp">
+      <div class="evp-poster"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}</div>
+      <h1 class="evp-ttl">${esc(e.title)}</h1>
+      ${already
+        ? `<button class="btn danger-outline" id="v-cancel" style="margin:4px 0 8px">Отменить запись</button>
+           <div class="evp-note">Вы записаны · статус: <b>${already.status==='approved'?'подтверждён':'ждёт подтверждения'}</b></div>`
+        : `<button class="btn" id="v-submit" ${full?'disabled':''} style="margin:4px 0 8px">${full?'Мест больше нет':'Записаться волонтёром'}</button>
+           <div class="evp-note">Запишем как <b>${esc(me.name)}</b> (${esc(me.phone)})</div>
+           <div class="err" id="v-err" style="display:none;margin-top:8px"></div>`}
+      <div class="evp-info">
+        ${e.date?`<div class="evp-line"><span class="evp-ico">📅</span><div>${fmtDateFull(e.date)}, ${weekday(e.date)}${e.time?` · ${esc(e.time)}`:''}</div></div>`:''}
+        ${e.place?`<div class="evp-line"><span class="evp-ico">📍</span><div>${esc(e.place)}</div></div>`:''}
+        <div class="evp-line"><span class="evp-ico">🙌</span><div>${full?'Мест нет':`Волонтёры: записано ${approved} из ${e.need}`}</div></div>
       </div>
-    </div>
-    ${already
-      ? `<div class="sticky-bar"><button class="btn danger-outline" id="v-cancel">Отменить запись</button></div>`
-      : `<div class="sticky-bar"><button class="btn" id="v-submit" ${full?'disabled':''}>${full?'Мест больше нет':'Записаться'}</button></div>`}`;
+    </div>`;
 
   document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
   hydratePosters(el);
