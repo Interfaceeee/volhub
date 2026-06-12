@@ -85,6 +85,7 @@ async function fetchTicketonEvents() {
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
     try {
       await ensureSchema();
       const events = await fetchTicketonEvents();
