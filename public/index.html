@@ -700,6 +700,17 @@ function renderProfile(){
   };
   // определяем прошедшие по данным события (дата+время)
   const evById = {}; state.events.forEach(e=>evById[e.id]=e);
+  // дополняем записи данными события из загруженного списка (Ticketon-события не лежат в БД)
+  vol.mySignups.forEach(s=>{
+    const e = evById[s.event_id];
+    if(e){
+      if(!s.title) s.title = e.title;
+      if(!s.date) s.date = e.date;
+      if(!s.place) s.place = e.place;
+      if(!s.time) s.time = e.time;
+    }
+    if(!s.title) s.title = 'Событие';
+  });
   const isPastSignup = s=>{ const e=evById[s.event_id]; return e?isPastEvent(e):isPast(s.date, s.time); };
   const active = vol.mySignups.filter(s=>!isPastSignup(s));
   const passed = vol.mySignups.filter(s=>isPastSignup(s));
@@ -1137,6 +1148,9 @@ async function drawUserProfile(zone, phone){
   const data = await api.volProfile(phone);
   if(!data || !data.profile){ zone.innerHTML='<div class="card center muted">Профиль не найден.</div>'; return; }
   const p = data.profile, sg = data.signups||[];
+  // дополняем недостающие данные события из загруженного списка (Ticketon-события не в БД)
+  const evMap = {}; state.events.forEach(e=>evMap[e.id]=e);
+  sg.forEach(s=>{ const e=evMap[s.event_id]; if(e){ if(!s.title)s.title=e.title; if(!s.date)s.date=e.date; if(!s.place)s.place=e.place; } if(!s.title)s.title='Событие'; });
   const approved = sg.filter(x=>x.status==='approved');
   const badges = sg.filter(x=>x.badge).length, vests = sg.filter(x=>x.vest).length;
   const history = sg.length ? sg.map(s=>`
