@@ -101,6 +101,14 @@
   .evp-line:last-child{border-bottom:none}
   .evp-ico{flex:0 0 auto; width:38px; height:38px; border-radius:10px; background:var(--green-soft);
     display:flex; align-items:center; justify-content:center; font-size:18px}
+  .evp-poster{position:relative}
+  .evp-cat{position:absolute; top:12px; left:12px; background:var(--green); color:#fff;
+    font-size:12px; font-weight:700; padding:6px 12px; border-radius:20px; z-index:2}
+  .evp-people-row{display:flex; gap:14px; overflow-x:auto; padding:4px 2px 8px; scrollbar-width:none}
+  .evp-person{flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:5px; width:60px; position:relative}
+  .evp-person-name{font-size:12px; color:var(--sub); max-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center}
+  .evp-person-ok{position:absolute; top:-2px; right:8px; background:var(--green); color:#fff;
+    width:18px; height:18px; border-radius:50%; font-size:11px; display:flex; align-items:center; justify-content:center; border:2px solid var(--card)}
   .reg-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin:0 -16px 90px; }
   .reg-ttl{margin:0 0 14px; font-size:16px; font-weight:800; color:var(--ink)}
   .sticky-bar{position:fixed; left:0; right:0; bottom:0; padding:12px 16px;
@@ -267,6 +275,7 @@ const api = {
   async events(){ const r = await fetch('/api/events'); return (await r.json()).events||[]; },
   async eventsCoord(){ const r = await fetch('/api/events',{headers:chdr()}); return (await r.json()).events||[]; },
   async signup(d){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(d)}); },
+  async eventPeople(eventId){ const r=await fetch('/api/signups?eventId='+encodeURIComponent(eventId)); if(!r.ok) return []; return (await r.json()).people||[]; },
   async cancelSignup(eventId){ return fetch('/api/signups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'cancel',phone:me.phone,password:volPass,eventId})}); },
   async listSignups(){ const r = await fetch('/api/signups',{headers:chdr()}); if(r.status===401) return null; return (await r.json()).signups||[]; },
   async patch(d){ return fetch('/api/signups',{method:'PATCH',headers:chdr({'content-type':'application/json'}),body:JSON.stringify(d)}); },
@@ -557,7 +566,7 @@ function renderEventPage(){
   el.innerHTML = `
     <button class="back-btn" id="back">‹ Назад к событиям</button>
     <div class="evp">
-      <div class="evp-poster"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}</div>
+      <div class="evp-poster"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}${e.category?`<span class="evp-cat">${esc(e.category)}</span>`:''}</div>
       <h1 class="evp-ttl">${esc(e.title)}</h1>
       ${already
         ? `<button class="btn danger-outline" id="v-cancel" style="margin:4px 0 8px">Отменить запись</button>
@@ -567,13 +576,29 @@ function renderEventPage(){
            <div class="err" id="v-err" style="display:none;margin-top:8px"></div>`}
       <div class="evp-info">
         ${e.date?`<div class="evp-line"><span class="evp-ico">📅</span><div>${fmtDateFull(e.date)}, ${weekday(e.date)}${e.time?` · ${esc(e.time)}`:''}</div></div>`:''}
-        ${e.place?`<div class="evp-line"><span class="evp-ico">📍</span><div>${esc(e.place)}</div></div>`:''}
+        ${e.place?`<div class="evp-line"><span class="evp-ico">📍</span><div>${esc(e.place)}${e.address&&e.address!==e.place?`<div class="muted" style="font-weight:400;font-size:14px;margin-top:2px">${esc(e.address)}</div>`:''}</div></div>`:''}
         <div class="evp-line"><span class="evp-ico">🙌</span><div>${full?'Мест нет':`Волонтёры: записано ${approved} из ${e.need}`}</div></div>
       </div>
+      ${(e.address||e.place)?`<a class="btn ghost" id="v-map" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.address||e.place)}" target="_blank" rel="noopener" style="margin-top:10px;display:block;text-align:center;text-decoration:none">📍 Посмотреть на карте</a>`:''}
+      ${e.slug?`<a class="btn ghost" href="https://ticketon.kg/event/${esc(e.slug)}" target="_blank" rel="noopener" style="margin-top:10px;display:block;text-align:center;text-decoration:none">🎟 Подробнее на Ticketon</a>`:''}
+      <div id="evp-people" style="margin-top:18px"></div>
     </div>`;
 
   document.getElementById('back').onclick=()=>{ vol.view='list'; render(); };
   hydratePosters(el);
+  // подгрузка списка записавшихся (аватарки/инициалы)
+  api.eventPeople(e.id).then(people=>{
+    const box=document.getElementById('evp-people');
+    if(!box) return;
+    if(!people.length){ box.innerHTML=''; return; }
+    const chips = people.map(p=>`
+      <div class="evp-person" title="${esc(p.name)}${p.approved?' · подтверждён':' · ждёт'}">
+        ${avaHTML(p)}
+        <span class="evp-person-name">${esc((p.name||'').split(/\s+/)[0])}</span>
+        ${p.approved?'<span class="evp-person-ok">✓</span>':''}
+      </div>`).join('');
+    box.innerHTML = `<div class="section-label">Уже записались (${people.length}):</div><div class="evp-people-row">${chips}</div>`;
+  });
   const sub=document.getElementById('v-submit');
   if(sub) sub.onclick=async()=>{
     if(sub.disabled) return;
