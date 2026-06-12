@@ -520,7 +520,7 @@ function renderLogin(){
 
 // --- СПИСОК СОБЫТИЙ ---
 function eventCardHTML(e, signedIds){
-  const mine=signedIds.has(e.id);
+  const mine=signedIds.has(String(e.id));
   return `<button class="ecard" data-id="${esc(e.id)}">
     <div class="img"${(!e.image&&e.slug)?` data-poster-slug="${esc(e.slug)}" data-poster-id="${esc(e.id)}"`:''}>${eventImg(e)}</div>
     <div class="body">
@@ -559,7 +559,7 @@ function renderList(){
   const q = (vol.q||'').trim().toLowerCase();
   let shown = upcoming.filter(e=> vol.day==='all' || e.date===vol.day);
   if(q) shown = shown.filter(e=> (e.title||'').toLowerCase().includes(q) || (e.place||'').toLowerCase().includes(q));
-  const signedIds = new Set(vol.mySignups.map(s=>s.event_id));
+  const signedIds = new Set(vol.mySignups.map(s=>String(s.event_id)));
   const evCards = shown.map(e=>eventCardHTML(e, signedIds)).join('');
 
   el.innerHTML = `<h1 class="page-title">Все события</h1>` + calHtml +
@@ -587,7 +587,7 @@ function renderEventPage(){
   if(!e){ vol.view='list'; renderList(); return; }
   const taken=+e.taken||0, full=taken>=e.need;
   const approved=+e.approved_count||0;
-  const already = vol.mySignups.find(s=>s.event_id===e.id);
+  const already = vol.mySignups.find(s=>String(s.event_id)===String(e.id));
 
   el.innerHTML = `
     <button class="back-btn" id="back">‹ Назад к событиям</button>
