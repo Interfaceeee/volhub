@@ -1,4 +1,4 @@
- // Shared module for the Neon (Postgres) database. release
+ // Shared module for the Neon (Postgres) database. release2
 // Reads the connection string from any of the standard env vars
 // created by the Neon integration on Vercel.
 
